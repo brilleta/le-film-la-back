@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.lefilmla.back.dto.LoginRequest;
 import com.lefilmla.back.dto.RegisterRequest;
+import com.lefilmla.back.entity.AiAccess;
+import com.lefilmla.back.entity.Role;
 import com.lefilmla.back.entity.User;
 import com.lefilmla.back.exception.ConflictException;
 import com.lefilmla.back.exception.InvalidCredentialsException;
@@ -131,7 +133,7 @@ class AuthServiceTest {
 		when(userRepository.findById(id)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> authService.currentUser(null)).isInstanceOf(UnauthenticatedException.class);
-		assertThatThrownBy(() -> authService.currentUser(new AuthenticatedUser(id)))
+		assertThatThrownBy(() -> authService.currentUser(new AuthenticatedUser(id, Role.USER, AiAccess.NONE)))
 			.isInstanceOf(UnauthenticatedException.class);
 	}
 

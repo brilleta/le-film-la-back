@@ -20,6 +20,8 @@ Déploiement : Docker sur Coolify.
 - `ANTHROPIC_API_KEY`, `TMDB_TOKEN`, `ANTHROPIC_MODEL` (optionnel)
 - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
 - `JWT_SECRET` (base64, 32 octets min., sinon refus de démarrer), `JWT_TTL` (optionnel, défaut `PT24H`), `AUTH_COOKIE_SECURE` (optionnel, défaut `true` ; `false` seulement en dev HTTP)
+- `ADMIN_EMAIL` (optionnel) : au démarrage, ce compte passe ADMIN + accès IA, **seulement si aucun ADMIN n'existe encore** (pas de promotion à l'inscription : les emails ne sont pas vérifiés)
+- Les tests importent aussi `.env` : toute valeur qui influe sur un test doit être fixée dans `src/test/resources/config/application.properties`
 - Jamais en dur, jamais dans les logs
 - `.env.example` à tenir à jour, `.env` non versionné
 
@@ -39,35 +41,53 @@ Déploiement : Docker sur Coolify.
 - `GET /api/movies/{type}/{id}` : détail (`movie` ou `tv`) avec credits et videos
 - `GET /api/trending` : tendances de la semaine
 - `POST /api/ai/search` `{ "description" }` → `{ "results": [{ "tmdbId", "type", "title", "year", "posterPath", "voteAverage", "reason" }] }`
+  - connecté (401 `UNAUTHENTICATED`) avec accès IA `GRANTED` (403 `AI_ACCESS_REQUIRED`), header CSRF obligatoire
 - Erreurs : `{ "error", "message" }`
 - Toute modification du contrat doit m'être signalée explicitement
 
 ### Auth
-- `POST /api/auth/register` `{ "email", "username", "password" }` → 201 `{ "id", "email", "username" }` + cookie de session
+- Objet utilisateur (`User`) : `{ "id", "email", "username", "role": "USER"|"ADMIN", "aiAccess": "NONE"|"PENDING"|"GRANTED"|"REJECTED" }`
+- `POST /api/auth/register` `{ "email", "username", "password" }` → 201 `User` + cookie de session
   - email valide (stocké en minuscules), pseudo 3-30 caractères, mot de passe 8-72 caractères
   - 409 `EMAIL_TAKEN` / `USERNAME_TAKEN` (comparaison insensible à la casse)
-- `POST /api/auth/login` `{ "email", "password" }` → 200 `{ "id", "email", "username" }` + cookie ; 401 `INVALID_CREDENTIALS` (même réponse que l'email existe ou non)
+- `POST /api/auth/login` `{ "email", "password" }` → 200 `User` + cookie ; 401 `INVALID_CREDENTIALS` (même réponse que l'email existe ou non)
 - `POST /api/auth/logout` → 204, cookie supprimé
-- `GET /api/auth/me` → `{ "id", "email", "username" }` ou 401 `UNAUTHENTICATED`
+- `GET /api/auth/me` → `User` ou 401 `UNAUTHENTICATED`
 - Cookie de session `auth_token` : JWT, httpOnly, Secure (configurable), SameSite=Lax, Path=/
 - Login et register limités par IP (`rate-limit.auth.*`, 429 `RATE_LIMITED`)
 
-### CSRF (à implémenter côté front, étape 2)
+### Accès à la recherche IA
+- Transitions : `NONE`/`REJECTED` → `PENDING` (demande) ; `NONE`/`PENDING`/`REJECTED` → `GRANTED` (grant, idempotent si déjà `GRANTED`) ; `PENDING` → `REJECTED` (reject) ; `GRANTED` → `NONE` (revoke)
+- Transition invalide : 409 `INVALID_AI_ACCESS_TRANSITION` avec message explicite
+- Seule la dernière décision est conservée (date + admin) ; historique complet prévu plus tard (événements Kafka)
+- `POST /api/ai/access-request` → 200 `User` (statut `PENDING`) ; 409 si déjà `PENDING` ou `GRANTED`
+
+### Admin (rôle ADMIN, sinon 403 `FORBIDDEN`)
+- `GET /api/admin/users?aiAccess=&q=&page=0&size=20` (size ≤ 100) → `{ "content": [AdminUser], "page", "size", "totalElements", "totalPages" }`
+  - `AdminUser` : `{ "id", "email", "username", "role", "aiAccess", "createdAt", "aiAccessRequestedAt", "aiAccessDecidedAt", "aiAccessDecidedBy": { "id", "username" } | null }`
+  - `q` : recherche dans l'email ou le pseudo, insensible à la casse ; tri : demandes les plus récentes, puis inscriptions
+- `POST /api/admin/users/{id}/ai-access/grant` | `reject` | `revoke` → 200 `AdminUser` ; 404 `NOT_FOUND` ; 409 transition invalide ou `CONCURRENT_MODIFICATION`
+- Un admin ne peut ni révoquer ni refuser son propre accès : 403 `SELF_ACCESS_CHANGE`
+
+### CSRF
 - Le back émet un cookie `XSRF-TOKEN` lisible par le JS dès la première requête (n'importe quel GET)
 - Le front doit renvoyer sa valeur dans le header `X-XSRF-TOKEN` sur tout POST/PUT/PATCH/DELETE, sinon 403 `CSRF_INVALID`
 - Le jeton change après register/login/logout : relire le cookie à chaque requête, ne pas le mettre en cache
-- Seule exception : `POST /api/ai/search` (anonyme, sans effet de bord, le front actuel n'envoie pas le header)
+- Aucune exception, `POST /api/ai/search` compris
 
 ### Règles d'accès
-- Publics : `/api/movies/**`, `/api/trending`, `/api/ai/search`, `/api/auth/**`, `/actuator/health`
+- Publics : `/api/movies/**`, `/api/trending`, `/api/auth/**`, `/actuator/health`
+- `/api/admin/**` : rôle ADMIN
+- `/api/ai/search` : connecté + accès `GRANTED` (vérifié par `AiAccessInterceptor`, avant le cache et le rate limiting)
 - Tout le reste exige le cookie de session : 401 `UNAUTHENTICATED` sinon, y compris sur une route inexistante
-- Session stateless ; un cookie invalide ou expiré est ignoré sur les routes publiques
+- Session stateless ; le filtre JWT relit l'utilisateur en base à chaque requête (rôle, accès IA, compte supprimé) : un retrait est immédiat
+- Un cookie invalide ou expiré est ignoré sur les routes publiques
 - Pas de CORS (même domaine via nginx)
 
 ## Recherche IA
 1. Claude renvoie une sortie structurée (record Java) : 5 à 10 candidats (titre, année, type, raison en français)
 2. Chaque candidat est vérifié sur TMDB ; les introuvables sont éliminés
-3. Garde-fous : description ≤ 300 caractères, max tokens limité, rate limiting par IP (`rate-limit.ai.*`), cache par description normalisée
+3. Garde-fous : description ≤ 300 caractères, max tokens limité, rate limiting par utilisateur (`rate-limit.ai.*`), cache par description normalisée
 
 ## Conventions
 - Records pour les DTO, injection par constructeur, pas de logique dans les controllers

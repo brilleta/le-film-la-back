@@ -1,5 +1,6 @@
 package com.lefilmla.back.config;
 
+import com.lefilmla.back.repository.UserRepository;
 import com.lefilmla.back.security.CsrfCookieFilter;
 import com.lefilmla.back.security.JwtCookieAuthenticationFilter;
 import com.lefilmla.back.security.SecurityErrorHandler;
@@ -38,28 +39,26 @@ public class SecurityConfig {
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder, AuthProperties properties,
-			CookieCsrfTokenRepository csrfTokenRepository, SecurityErrorHandler errorHandler) throws Exception {
+			CookieCsrfTokenRepository csrfTokenRepository, SecurityErrorHandler errorHandler,
+			UserRepository userRepository) throws Exception {
 		http
-			// Config SPA officielle (spa()), avec notre dépôt pour partager les réglages du cookie.
-			// /api/ai/search est exempté : anonyme, sans effet de bord, et le front actuel n'envoie pas le header.
-			.csrf(csrf -> csrf.spa()
-				.csrfTokenRepository(csrfTokenRepository)
-				.ignoringRequestMatchers("/api/ai/search"))
+			// Config SPA officielle (spa()), avec notre dépôt pour partager les réglages du cookie. Aucune exemption.
+			.csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokenRepository))
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.httpBasic(basic -> basic.disable())
 			.formLogin(form -> form.disable())
 			.logout(logout -> logout.disable())
 			.requestCache(cache -> cache.disable())
 			.authorizeHttpRequests(auth -> auth
-				.requestMatchers("/api/movies/**", "/api/trending", "/api/ai/search", "/api/auth/**",
-						"/actuator/health", "/error")
+				.requestMatchers("/api/movies/**", "/api/trending", "/api/auth/**", "/actuator/health", "/error")
 				.permitAll()
+				.requestMatchers("/api/admin/**").hasRole("ADMIN")
 				.anyRequest().authenticated())
 			.exceptionHandling(exceptions -> exceptions
 				.authenticationEntryPoint(errorHandler)
 				.accessDeniedHandler(errorHandler))
 			.addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
-			.addFilterBefore(new JwtCookieAuthenticationFilter(jwtDecoder, properties.cookie().name()),
+			.addFilterBefore(new JwtCookieAuthenticationFilter(jwtDecoder, properties.cookie().name(), userRepository),
 					AnonymousAuthenticationFilter.class);
 		return http.build();
 	}
