@@ -1,10 +1,12 @@
 package com.lefilmla.back.controller;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.lefilmla.back.PostgresTestConfiguration;
 import com.lefilmla.back.client.TmdbClient;
 import com.lefilmla.back.dto.TitleType;
 import com.lefilmla.back.exception.TmdbNotFoundException;
@@ -12,6 +14,7 @@ import com.lefilmla.back.exception.UpstreamException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -19,6 +22,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
+@Import(PostgresTestConfiguration.class)
 @AutoConfigureMockMvc
 class MovieControllerTest {
 
@@ -91,7 +95,8 @@ class MovieControllerTest {
 
 	@Test
 	void unknownRouteUsesErrorFormat() throws Exception {
-		mockMvc.perform(get("/api/nope"))
+		// Authentifié : un anonyme reçoit 401 sur toute route non publique, même inexistante.
+		mockMvc.perform(get("/api/nope").with(user("test")))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.error").value("NOT_FOUND"));
 	}

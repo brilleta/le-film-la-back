@@ -9,10 +9,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
-import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
-@Component
+/** Un bucket par IP ; une instance par groupe d'endpoints (voir WebConfig). */
 public class RateLimitInterceptor implements HandlerInterceptor {
 
 	// Borné et expirant : une rafale d'IP différentes ne peut pas faire grossir la mémoire sans limite.
@@ -21,10 +20,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 		.maximumSize(100_000)
 		.build();
 
-	private final RateLimitProperties properties;
+	private final RateLimitProperties.Limit limit;
 
-	public RateLimitInterceptor(RateLimitProperties properties) {
-		this.properties = properties;
+	private final String message;
+
+	public RateLimitInterceptor(RateLimitProperties.Limit limit, String message) {
+		this.limit = limit;
+		this.message = message;
 	}
 
 	@Override
@@ -33,15 +35,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 		ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
 		if (!probe.isConsumed()) {
 			long seconds = TimeUnit.NANOSECONDS.toSeconds(probe.getNanosToWaitForRefill()) + 1;
-			throw new RateLimitExceededException(seconds);
+			throw new RateLimitExceededException(message, seconds);
 		}
 		return true;
 	}
 
 	private Bucket newBucket() {
 		return Bucket.builder()
-			.addLimit(limit -> limit.capacity(properties.capacity())
-				.refillGreedy(properties.capacity(), properties.period()))
+			.addLimit(l -> l.capacity(limit.capacity()).refillGreedy(limit.capacity(), limit.period()))
 			.build();
 	}
 }

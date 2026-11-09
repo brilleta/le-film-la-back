@@ -9,14 +9,18 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableConfigurationProperties(RateLimitProperties.class)
 public class WebConfig implements WebMvcConfigurer {
 
-	private final RateLimitInterceptor rateLimitInterceptor;
+	private final RateLimitInterceptor aiRateLimit;
 
-	public WebConfig(RateLimitInterceptor rateLimitInterceptor) {
-		this.rateLimitInterceptor = rateLimitInterceptor;
+	private final RateLimitInterceptor authRateLimit;
+
+	public WebConfig(RateLimitProperties properties) {
+		this.aiRateLimit = new RateLimitInterceptor(properties.ai(), "Trop de recherches, réessayez dans un instant");
+		this.authRateLimit = new RateLimitInterceptor(properties.auth(), "Trop de tentatives, réessayez dans un instant");
 	}
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
-		registry.addInterceptor(rateLimitInterceptor).addPathPatterns("/api/ai/search");
+		registry.addInterceptor(aiRateLimit).addPathPatterns("/api/ai/search");
+		registry.addInterceptor(authRateLimit).addPathPatterns("/api/auth/login", "/api/auth/register");
 	}
 }

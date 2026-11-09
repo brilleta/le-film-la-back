@@ -27,7 +27,29 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException ex) {
 		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
 			.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()))
-			.body(new ErrorResponse("RATE_LIMITED", "Trop de recherches, réessayez dans un instant"));
+			.body(new ErrorResponse("RATE_LIMITED", ex.getMessage()));
+	}
+
+	@ExceptionHandler(ConflictException.class)
+	ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(ex.code(), ex.getMessage()));
+	}
+
+	@ExceptionHandler(InvalidCredentialsException.class)
+	ResponseEntity<ErrorResponse> handleInvalidCredentials(InvalidCredentialsException ex) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+			.body(new ErrorResponse("INVALID_CREDENTIALS", "Email ou mot de passe incorrect"));
+	}
+
+	@ExceptionHandler(UnauthenticatedException.class)
+	ResponseEntity<ErrorResponse> handleUnauthenticated(UnauthenticatedException ex) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+			.body(new ErrorResponse("UNAUTHENTICATED", "Authentification requise"));
+	}
+
+	@ExceptionHandler(InvalidRequestException.class)
+	ResponseEntity<ErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
+		return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_REQUEST", ex.getMessage()));
 	}
 
 	@ExceptionHandler(UpstreamException.class)

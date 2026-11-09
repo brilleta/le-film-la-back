@@ -1,6 +1,33 @@
 services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: lefilmla
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    # Depuis Postgres 18, le volume se monte sur /var/lib/postgresql (et non plus .../data)
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   back:
     build: .
     ports:
       - "8080:8080"
     env_file: .env
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/lefilmla
+      # En local, le back est servi en HTTP : le cookie ne peut pas être Secure
+      AUTH_COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
