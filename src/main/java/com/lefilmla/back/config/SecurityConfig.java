@@ -4,6 +4,7 @@ import com.lefilmla.back.repository.UserRepository;
 import com.lefilmla.back.security.CsrfCookieFilter;
 import com.lefilmla.back.security.JwtCookieAuthenticationFilter;
 import com.lefilmla.back.security.SecurityErrorHandler;
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -50,6 +51,8 @@ public class SecurityConfig {
 			.logout(logout -> logout.disable())
 			.requestCache(cache -> cache.disable())
 			.authorizeHttpRequests(auth -> auth
+				// Dispatch ASYNC (fin d'un flux SSE) : la requête d'origine a déjà été autorisée
+				.dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
 				.requestMatchers("/api/movies/**", "/api/trending", "/api/auth/**", "/actuator/health", "/error")
 				.permitAll()
 				.requestMatchers("/api/admin/**").hasRole("ADMIN")
