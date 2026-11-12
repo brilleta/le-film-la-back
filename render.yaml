@@ -1,0 +1,36 @@
+# Blueprint Render : web service Docker sur le plan gratuit.
+# Les variables `sync: false` sont saisies dans le dashboard à la création, jamais versionnées.
+services:
+  - type: web
+    name: le-film-la-back
+    runtime: docker
+    region: frankfurt
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8080"
+      # Neon : jdbc:postgresql://<host>/<db>?sslmode=require (endpoint direct, sans -pooler)
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # openssl rand -base64 32
+      - key: JWT_SECRET
+        sync: false
+      - key: TMDB_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-5-5
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      # À renseigner après la première inscription (redémarrage automatique → promotion ADMIN)
+      - key: ADMIN_EMAIL
+        sync: false

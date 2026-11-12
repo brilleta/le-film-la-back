@@ -2,7 +2,7 @@
 
 API de l'appli de recherche de films et séries "le-film-la".
 Le front React est dans un repo séparé et appelle ce back via `/api` (proxy nginx en prod).
-Déploiement : Docker sur Coolify.
+Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postgres Neon ; voir `render.yaml`. Le back s'endort après 15 min sans trafic.
 
 ## Stack
 - Java 21, Spring Boot, Maven (wrapper)
