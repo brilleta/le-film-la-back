@@ -10,6 +10,7 @@ import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.kstream.SessionWindows;
 import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
@@ -24,8 +25,13 @@ import tools.jackson.databind.json.JsonMapper;
  * Statistiques temps réel des recherches : {@code search.events} agrégé par mode (la clé du topic) dans des
  * fenêtres d'une minute. La vue « N dernières minutes » est recomposée à la lecture (voir {@link SearchStatsService}).
  * <ul>
- * <li>{@code groupByKey} sur la clé d'origine : aucun topic de repartition.</li>
- * <li>State store en mémoire sans changelog : aucun topic interne (plan Aiven limité en topics), pas de RocksDB
+ * <li>Mesures techniques (volume, latence, cache, erreurs) : {@code groupByKey} sur la clé d'origine (le mode),
+ * aucun topic de repartition.</li>
+ * <li>Intentions de recherche : la recherche part à chaque pause de frappe, « bat » puis « batman » sont donc deux
+ * requêtes pour une seule recherche. Les événements sont re-clés par onglet + mode (un topic de repartition, le seul
+ * topic interne) puis regroupés en fenêtres de session : une pause de plus de {@link #INTENT_GAP} clôt la recherche.
+ * Le store de sessions est lu directement : une session absorbée par une autre disparaît, rien à retrancher en aval.</li>
+ * <li>Stores en mémoire sans changelog : pas d'autre topic interne (plan Aiven limité à 5 topics), pas de RocksDB
  * (bibliothèque native incompatible avec l'image alpine). Contrepartie assumée : les stats repartent de zéro à
  * chaque redémarrage.</li>
  * </ul>
@@ -35,6 +41,14 @@ import tools.jackson.databind.json.JsonMapper;
 public class SearchStatsTopology {
 
 	public static final String STORE = "search-stats";
+
+	public static final String INTENTS_STORE = "search-intents";
+
+	/** Nom du topic de repartition : {@code <application.id>-search-intents-repartition}. */
+	public static final String INTENTS_REPARTITION = "search-intents";
+
+	/** Pause de frappe au-delà de laquelle une nouvelle requête est une nouvelle recherche. */
+	public static final Duration INTENT_GAP = Duration.ofSeconds(3);
 
 	public static final Duration BUCKET = Duration.ofMinutes(1);
 
@@ -75,7 +89,23 @@ public class SearchStatsTopology {
 						.withKeySerde(Serdes.String())
 						.withValueSerde(new JsonSerde<>(jsonMapper, SearchStatsBucket.class))
 						.withLoggingDisabled());
+
+		events.selectKey((mode, event) -> intentKey(event))
+			.groupByKey(Grouped.with(INTENTS_REPARTITION, Serdes.String(), eventSerde))
+			.windowedBy(SessionWindows.ofInactivityGapAndGrace(INTENT_GAP, GRACE))
+			.aggregate(SearchIntent::empty, (key, event, intent) -> intent.plus(event),
+					(key, left, right) -> left.merge(right),
+					Materialized.<String, SearchIntent>as(Stores.inMemorySessionStore(INTENTS_STORE, RETENTION))
+						.withKeySerde(Serdes.String())
+						.withValueSerde(new JsonSerde<>(jsonMapper, SearchIntent.class))
+						.withLoggingDisabled());
 		return events;
+	}
+
+	/** Onglet + mode ; sans onglet connu (client sans header), chaque requête est sa propre recherche. */
+	static String intentKey(SearchEvent event) {
+		String session = event.sessionId() != null ? event.sessionId() : event.eventId().toString();
+		return session + ":" + event.mode().name();
 	}
 
 	private static SearchEvent parse(JsonMapper jsonMapper, String json) {

@@ -44,7 +44,7 @@ class SearchTrackerTest {
 				{"results":[{"id":1,"title":"Dune"},{"id":2,"name":"Dune : Prophecy"},{"id":3}]}
 				""");
 
-		assertThat(tracker.classic("Dune", () -> response)).isSameAs(response);
+		assertThat(tracker.classic("Dune", null, () -> response)).isSameAs(response);
 
 		SearchEvent event = published();
 		assertThat(event.mode()).isEqualTo(SearchMode.CLASSIC);
@@ -63,10 +63,10 @@ class SearchTrackerTest {
 		cacheManager.getCache(CacheConfig.TMDB).put(MovieService.searchCacheKey("Dune"), "cached");
 		cacheManager.getCache(CacheConfig.AI).put(AiSearchService.normalize("Un film  ÉPIQUE"), "cached");
 
-		tracker.classic("Dune", () -> JsonMapper.builder().build().readTree("{\"results\":[]}"));
+		tracker.classic("Dune", null, () -> JsonMapper.builder().build().readTree("{\"results\":[]}"));
 		assertThat(published().cacheHit()).isTrue();
 
-		tracker.ai("un film épique", () -> new AiSearchResponse(List.of()));
+		tracker.ai("un film épique", null, () -> new AiSearchResponse(List.of()));
 		var captor = ArgumentCaptor.forClass(SearchEvent.class);
 		verify(publisher, org.mockito.Mockito.times(2)).publish(captor.capture());
 		assertThat(captor.getValue().cacheHit()).isTrue();
@@ -79,7 +79,7 @@ class SearchTrackerTest {
 			.mapToObj(i -> new AiSearchResult(i, "movie", "Film " + i, 2000 + i, null, null, "raison"))
 			.toList();
 
-		tracker.ai("des films", () -> new AiSearchResponse(results));
+		tracker.ai("des films", null, () -> new AiSearchResponse(results));
 
 		SearchEvent event = published();
 		assertThat(event.resultCount()).isEqualTo(7);
@@ -90,7 +90,7 @@ class SearchTrackerTest {
 	void failedSearchIsPublishedAsErrorAndRethrown() {
 		UpstreamException failure = new UpstreamException("TMDB indisponible", null);
 
-		assertThatThrownBy(() -> tracker.classic("dune", () -> {
+		assertThatThrownBy(() -> tracker.classic("dune", null, () -> {
 			throw failure;
 		})).isSameAs(failure);
 
@@ -105,6 +105,18 @@ class SearchTrackerTest {
 		assertThat(SearchTracker.anonymize("  Le Seigneur   des ANNEAUX ")).isEqualTo("le seigneur des anneaux");
 		assertThat(SearchTracker.anonymize("é".repeat(300))).hasSize(SearchEvent.MAX_QUERY_LENGTH)
 			.isEqualTo("e".repeat(SearchEvent.MAX_QUERY_LENGTH));
+	}
+
+	@Test
+	void searchSessionIsKeptOnlyWhenItLooksLikeAnIdentifier() {
+		String tab = "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f";
+		tracker.classic("dune", tab, () -> JsonMapper.builder().build().readTree("{\"results\":[]}"));
+		assertThat(published().sessionId()).isEqualTo(tab);
+
+		assertThat(SearchTracker.validSession(null)).isNull();
+		assertThat(SearchTracker.validSession("court")).isNull();
+		assertThat(SearchTracker.validSession("x".repeat(65))).isNull();
+		assertThat(SearchTracker.validSession("<script>alert(1)</script>")).isNull();
 	}
 
 	private SearchEvent published() {
