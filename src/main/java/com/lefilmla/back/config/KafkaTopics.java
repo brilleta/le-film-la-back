@@ -1,5 +1,6 @@
 package com.lefilmla.back.config;
 
+import com.lefilmla.back.stats.SearchStatsTopology;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -30,10 +31,19 @@ public class KafkaTopics {
 
 	private final int replicationFactor;
 
+	private final String streamsApplicationId;
+
 	public KafkaTopics(@Value("${kafka.topics.partitions:3}") int partitions,
-			@Value("${kafka.topics.replication-factor:1}") int replicationFactor) {
+			@Value("${kafka.topics.replication-factor:1}") int replicationFactor,
+			@Value("${spring.kafka.streams.application-id}") String streamsApplicationId) {
 		this.partitions = partitions;
 		this.replicationFactor = replicationFactor;
+		this.streamsApplicationId = streamsApplicationId;
+	}
+
+	/** Nom donné par Kafka Streams au topic de repartition des intentions : {@code <application.id>-<nom>-repartition}. */
+	public static String repartitionTopic(String streamsApplicationId, String name) {
+		return streamsApplicationId + "-" + name + "-repartition";
 	}
 
 	@Bean
@@ -44,6 +54,20 @@ public class KafkaTopics {
 	@Bean
 	NewTopic searchEventsTopic() {
 		return TopicBuilder.name(SEARCH_EVENTS).partitions(partitions).replicas(replicationFactor).build();
+	}
+
+	/**
+	 * Topic interne de Kafka Streams, créé ici plutôt que par Kafka Streams : celui-ci impose {@code retention.ms=-1}
+	 * (et {@code segment.bytes}), refusé par la politique du plan Aiven free (« PolicyViolationException »). Créé au
+	 * démarrage avec les réglages par défaut du broker, comme les autres topics ; Kafka Streams le trouve existant et
+	 * ne vérifie que son nombre de partitions, qui doit égaler celui de {@code search.events} (même propriété).
+	 */
+	@Bean
+	NewTopic searchIntentsRepartitionTopic() {
+		return TopicBuilder.name(repartitionTopic(streamsApplicationId, SearchStatsTopology.INTENTS_REPARTITION))
+			.partitions(partitions)
+			.replicas(replicationFactor)
+			.build();
 	}
 
 	/** Messages que le consommateur n'a pas pu traiter ; une partition suffit, ils sont rares et inspectés à la main. */
