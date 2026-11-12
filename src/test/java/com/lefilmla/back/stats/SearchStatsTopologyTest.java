@@ -42,10 +42,13 @@ class SearchStatsTopologyTest {
 
 	private TestInputTopic<String, String> input;
 
+	private String topologyDescription;
+
 	@BeforeEach
 	void setUp() {
 		StreamsBuilder builder = new StreamsBuilder();
 		SearchStatsTopology.build(builder, jsonMapper);
+		topologyDescription = builder.build().describe().toString();
 		Properties props = new Properties();
 		props.put(StreamsConfig.APPLICATION_ID_CONFIG, "search-stats-test");
 		props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "unused:9092");
@@ -56,6 +59,20 @@ class SearchStatsTopologyTest {
 	@AfterEach
 	void tearDown() {
 		driver.close();
+	}
+
+	@Test
+	void theOnlyRepartitionTopicIsTheOnePreCreatedByKafkaTopics() {
+		// KafkaTopics le crée sous ce nom (préfixé par l'application.id) : le nom doit suivre la topologie
+		String expected = KafkaTopics.repartitionTopic("app", SearchStatsTopology.INTENTS_REPARTITION)
+			.substring("app-".length());
+		var repartitionTopics = java.util.regex.Pattern.compile("[\\w.-]+-repartition")
+			.matcher(topologyDescription)
+			.results()
+			.map(java.util.regex.MatchResult::group)
+			.distinct()
+			.toList();
+		assertThat(repartitionTopics).containsExactly(expected);
 	}
 
 	@Test
