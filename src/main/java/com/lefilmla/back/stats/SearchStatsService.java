@@ -10,22 +10,15 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.streams.errors.InvalidStateStoreException;
-import org.apache.kafka.streams.kstream.Windowed;
-import org.apache.kafka.streams.state.KeyValueIterator;
-import org.apache.kafka.streams.state.ReadOnlySessionStore;
 import org.apache.kafka.streams.state.ReadOnlyWindowStore;
 import org.apache.kafka.streams.state.WindowStoreIterator;
 import org.springframework.stereotype.Service;
 
-/**
- * Recompose les N dernières minutes : mesures techniques depuis les fenêtres d'une minute, intentions depuis les
- * sessions de frappe terminées ou en cours sur la période.
- */
+/** Recompose les N dernières minutes à partir des fenêtres d'une minute du state store. */
 @Service
 public class SearchStatsService {
 
@@ -53,7 +46,6 @@ public class SearchStatsService {
 
 		Map<SearchMode, ModeStats> modes = new EnumMap<>(SearchMode.class);
 		try {
-			Map<SearchMode, Intents> intents = intents(store.intentStore(), from, now);
 			ReadOnlyWindowStore<String, SearchStatsBucket> windows = store.windowStore();
 			for (SearchMode mode : SearchMode.values()) {
 				SearchStatsBucket total = SearchStatsBucket.empty();
@@ -67,7 +59,7 @@ public class SearchStatsService {
 						}
 					}
 				}
-				modes.put(mode, toModeStats(total, intents.getOrDefault(mode, new Intents())));
+				modes.put(mode, toModeStats(total));
 			}
 		}
 		catch (InvalidStateStoreException ex) {
@@ -81,43 +73,11 @@ public class SearchStatsService {
 		return new SearchStatsResponse(now, minutes, modes, points);
 	}
 
-	/** Sessions qui se terminent dans la période (en cours comprises) : une session = une recherche. */
-	private static Map<SearchMode, Intents> intents(ReadOnlySessionStore<String, SearchIntent> sessions, Instant from,
-			Instant now) {
-		Map<SearchMode, Intents> byMode = new EnumMap<>(SearchMode.class);
-		// Bornes de clé nulles : toutes les sessions, tous onglets confondus
-		try (KeyValueIterator<Windowed<String>, SearchIntent> it = sessions.findSessions(null, null,
-				from.toEpochMilli(), now.toEpochMilli())) {
-			while (it.hasNext()) {
-				SearchIntent intent = it.next().value;
-				if (intent.mode() != null) {
-					byMode.computeIfAbsent(intent.mode(), mode -> new Intents()).add(intent);
-				}
-			}
-		}
-		return byMode;
-	}
-
-	private static ModeStats toModeStats(SearchStatsBucket bucket, Intents intents) {
+	private static ModeStats toModeStats(SearchStatsBucket bucket) {
 		long searches = bucket.searches();
-		return new ModeStats(searches, intents.count, bucket.errors(), ratio(bucket.errors(), searches),
+		return new ModeStats(searches, bucket.errors(), ratio(bucket.errors(), searches),
 				ratio(bucket.cacheHits(), searches), searches == 0 ? 0 : bucket.latencySumMs() / searches,
-				bucket.latencyMaxMs(), top(intents.queries), top(intents.titles));
-	}
-
-	private static final class Intents {
-
-		private long count;
-
-		private final Map<String, Long> queries = new HashMap<>();
-
-		private final Map<String, Long> titles = new HashMap<>();
-
-		void add(SearchIntent intent) {
-			count++;
-			queries.merge(intent.query(), 1L, Long::sum);
-			intent.titles().forEach(title -> titles.merge(title, 1L, Long::sum));
-		}
+				bucket.latencyMaxMs(), top(bucket.queries()), top(bucket.titles()));
 	}
 
 	private static double ratio(long part, long total) {

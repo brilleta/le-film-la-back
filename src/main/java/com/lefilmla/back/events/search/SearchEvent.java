@@ -9,14 +9,11 @@ import java.util.UUID;
  * d'utilisateur, la requête est normalisée et tronquée. Alimente les statistiques temps réel de l'admin.
  *
  * @param titles les premiers titres renvoyés (au plus {@link #MAX_TITLES})
- * @param sessionId identifiant aléatoire de l'onglet (header {@code X-Search-Session}), sans lien avec le compte ;
- * null si absent ou invalide. Sert à regrouper les frappes successives d'une même recherche (v2).
  */
 public record SearchEvent(int schemaVersion, UUID eventId, SearchMode mode, String query, int resultCount,
-		List<String> titles, long latencyMs, boolean cacheHit, SearchOutcome outcome, Instant occurredAt,
-		String sessionId) {
+		List<String> titles, long latencyMs, boolean cacheHit, SearchOutcome outcome, Instant occurredAt) {
 
-	public static final int SCHEMA_VERSION = 2;
+	public static final int SCHEMA_VERSION = 1;
 
 	public static final int MAX_QUERY_LENGTH = 100;
 
