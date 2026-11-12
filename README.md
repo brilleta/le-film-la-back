@@ -95,7 +95,16 @@ Voir le contrat détaillé dans `CLAUDE.md`. En résumé :
 
 ## Déploiement
 
-Render (web service Docker, plan gratuit, région Frankfurt) et PostgreSQL Neon. Le blueprint est dans `render.yaml` ; les secrets sont saisis dans le dashboard Render, jamais versionnés. Le service s'endort après 15 minutes sans trafic.
+Render (web service Docker, plan gratuit, région Frankfurt), PostgreSQL Neon et Kafka Aiven (plan free). Le blueprint est dans `render.yaml` ; les secrets sont saisis dans le dashboard Render, jamais versionnés. Le service s'endort après 15 minutes sans trafic : grâce à l'outbox, les événements produits juste avant la mise en veille sont publiés au réveil.
+
+### Kafka sur Aiven
+
+1. Créer un service Apache Kafka (plan free) dans le projet Aiven.
+2. Activer SASL : Service settings → Advanced configuration → `kafka_authentication_methods.sasl` = true. Le « Service URI » affiche alors un hôte:port SASL.
+3. Récupérer l'utilisateur et le mot de passe (onglet Users) et le certificat CA du projet (Overview → « CA certificate »).
+4. Renseigner dans Render : `SPRING_PROFILES_ACTIVE=prod`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `KAFKA_CA_CERT` (contenu PEM complet) et `KAFKA_TOPIC_REPLICATION_FACTOR` (nombre de brokers du plan, 1 sur le free).
+
+Le profil `prod` (`application-prod.properties`) bascule le client en `SASL_SSL` + `SCRAM-SHA-256` et fait confiance au CA Aiven via un SSL bundle Spring Boot. Les topics sont créés au premier démarrage.
 
 ---
 

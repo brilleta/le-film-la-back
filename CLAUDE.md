@@ -2,7 +2,7 @@
 
 API de l'appli de recherche de films et séries "le-film-la".
 Le front React est dans un repo séparé et appelle ce back via `/api` (proxy nginx en prod).
-Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postgres Neon ; voir `render.yaml`. Le back s'endort après 15 min sans trafic.
+Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postgres Neon + Kafka Aiven (free, SASL_SSL via le profil `prod`, `application-prod.properties`) ; voir `render.yaml`. Le back s'endort après 15 min sans trafic.
 
 ## Stack
 - Java 21, Spring Boot, Maven (wrapper)
@@ -21,7 +21,8 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `ANTHROPIC_API_KEY`, `TMDB_TOKEN`, `ANTHROPIC_MODEL` (optionnel)
 - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
 - `JWT_SECRET` (base64, 32 octets min., sinon refus de démarrer), `JWT_TTL` (optionnel, défaut `PT24H`), `AUTH_COOKIE_SECURE` (optionnel, défaut `true` ; `false` seulement en dev HTTP)
-- `KAFKA_BOOTSTRAP_SERVERS` (défaut `localhost:9094`), `KAFKA_TOPIC_PARTITIONS` (défaut 3), `KAFKA_TOPIC_REPLICATION_FACTOR` (défaut 1 ; 3 sur Aiven)
+- `KAFKA_BOOTSTRAP_SERVERS` (défaut `localhost:9094`), `KAFKA_TOPIC_PARTITIONS` (défaut 3), `KAFKA_TOPIC_REPLICATION_FACTOR` (défaut 1 ; = nombre de brokers Aiven)
+- Profil `prod` seulement : `SPRING_PROFILES_ACTIVE=prod`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `KAFKA_CA_CERT` (PEM inline)
 - `ADMIN_EMAIL` (optionnel) : au démarrage, ce compte passe ADMIN + accès IA, **seulement si aucun ADMIN n'existe encore** (pas de promotion à l'inscription : les emails ne sont pas vérifiés)
 - Les tests importent aussi `.env` : toute valeur qui influe sur un test doit être fixée dans `src/test/resources/config/application.properties`
 - Jamais en dur, jamais dans les logs
