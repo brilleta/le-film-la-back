@@ -17,6 +17,7 @@ API Spring Boot de l'application de recherche de films et de séries. Le front R
 - Spring AI (Anthropic), Spring Security, Spring Data JPA, Flyway, Spring Kafka
 - PostgreSQL, Apache Kafka (KRaft)
 - Caffeine (cache), Bucket4j (rate limiting), Actuator (`/actuator/health`)
+- Observabilité : OpenTelemetry (via Micrometer), Grafana LGTM en local
 - Tests : JUnit 5, Testcontainers (PostgreSQL et Kafka)
 
 ## Démarrer en local
@@ -27,7 +28,7 @@ Prérequis : Docker, Java 21 (ou juste Docker pour tout lancer en conteneurs).
 2. Lancer l'infrastructure :
 
    ```sh
-   docker compose up -d postgres kafka kafka-ui
+   docker compose up -d postgres kafka kafka-ui lgtm
    ```
 
 3. Lancer le back :
@@ -36,7 +37,7 @@ Prérequis : Docker, Java 21 (ou juste Docker pour tout lancer en conteneurs).
    ./mvnw spring-boot:run
    ```
 
-L'API répond sur `http://localhost:8080`, Kafka UI sur `http://localhost:8090`.
+L'API répond sur `http://localhost:8080`, Kafka UI sur `http://localhost:8090`, Grafana sur `http://localhost:3000`.
 
 Pour tout lancer en conteneurs, back compris : `docker compose up --build`.
 
@@ -55,6 +56,21 @@ Pour tout lancer en conteneurs, back compris : `docker compose up --build`.
 Les événements passent par un **outbox transactionnel** : écrits dans la table `outbox_events` dans la même transaction que la donnée métier, puis relayés vers Kafka juste après le commit et par un balayage périodique. Un broker indisponible ne fait perdre aucun événement, il retarde seulement leur publication. Livraison au moins une fois : les consommateurs dédoublonnent sur l'`event-id` porté en header.
 
 Côté consommation, le back lui-même écoute `ai-access.events` et construit l'**historique des accès IA** (`ai_access_history`), exposé aux admins. L'insertion est idempotente (`INSERT … ON CONFLICT DO NOTHING` sur l'identifiant d'événement), les erreurs transitoires sont réessayées, et un message illisible part en Dead Letter Topic sans bloquer la partition.
+
+## Observabilité
+
+Chaque requête produit une **trace OpenTelemetry** : le span de la requête HTTP, avec en enfants les appels à TMDB et à Claude (durée, statut, erreur). Le `traceId` est ajouté à chaque ligne de log, ce qui permet de retrouver la trace complète à partir d'une erreur dans les logs.
+
+- Instrumentation par Micrometer Observation (`spring-boot-starter-opentelemetry`), sans agent Java
+- Export OTLP/HTTP, activé seulement si `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` est défini : sans collecteur, rien n'est envoyé
+- En local, le conteneur `lgtm` (Grafana, Tempo, Loki, Prometheus) reçoit les traces : Grafana → *Explore* → *Tempo*
+- Non tracés : les sondes `/actuator`, le flux SSE des stats, les tâches planifiées et les étapes internes de Spring Security
+- Le contenu des prompts envoyés à Claude n'est jamais enregistré dans les traces
+
+```sh
+docker compose up -d postgres kafka kafka-ui lgtm
+MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces ./mvnw spring-boot:run
+```
 
 ## Tests
 

@@ -8,6 +8,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - Java 21, Spring Boot, Maven (wrapper)
 - Spring AI (starter Anthropic), modèle Claude Haiku configurable
 - Caffeine (cache), Bucket4j (rate limiting), Actuator (`/actuator/health` uniquement)
+- Observabilité : `spring-boot-starter-opentelemetry` (Micrometer Observation + pont OTel). Spans : requêtes HTTP entrantes, appels TMDB (`RestClient.Builder` de Boot, module `spring-boot-starter-restclient`), appels Claude (observations Spring AI, sans le contenu des prompts). `ObservabilityConfig` écarte `/actuator/**`, le flux SSE des stats, les `@Scheduled` et les observations de Spring Security. Export OTLP **seulement si** `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` est défini (compose : conteneur `lgtm`, Grafana sur `http://localhost:3000`) ; échantillonnage `TRACING_SAMPLING_PROBABILITY` (défaut 1.0). traceId/spanId dans chaque ligne de log. Tests : `@AutoConfigureTracing` + `InMemorySpanExporter` (voir `TracingIntegrationTest`)
 - PostgreSQL, Spring Data JPA, Flyway (`ddl-auto=validate` : le schéma ne change que par migration `db/migration/V*__*.sql`)
 - Spring Security 7 : BCrypt, JWT HS256 (`spring-security-oauth2-jose`) dans un cookie httpOnly, CSRF en mode SPA
 - Kafka (`spring-boot-starter-kafka`) : KRaft local via docker compose (`localhost:9094` depuis l'hôte, `kafka:9092` dans le réseau compose), Kafka UI sur `http://localhost:8090` ; topics déclarés dans `config/KafkaTopics` et créés au démarrage ; un broker absent n'empêche pas le démarrage (`fail-fast=false`)
@@ -15,7 +16,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 
 ## Commandes
 - `./mvnw spring-boot:run` / `./mvnw test` / `./mvnw verify`
-- `docker compose up --build` pour lancer en local (`docker compose up -d postgres kafka kafka-ui` pour ne lancer que l'infra et le back via `spring-boot:run`)
+- `docker compose up --build` pour lancer en local (`docker compose up -d postgres kafka kafka-ui lgtm` pour ne lancer que l'infra et le back via `spring-boot:run` ; ajouter alors `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces` dans l'environnement pour voir les traces)
 
 ## Variables d'environnement
 - `ANTHROPIC_API_KEY`, `TMDB_TOKEN`, `ANTHROPIC_MODEL` (optionnel)
@@ -23,6 +24,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `JWT_SECRET` (base64, 32 octets min., sinon refus de démarrer), `JWT_TTL` (optionnel, défaut `PT24H`), `AUTH_COOKIE_SECURE` (optionnel, défaut `true` ; `false` seulement en dev HTTP)
 - `KAFKA_BOOTSTRAP_SERVERS` (défaut `localhost:9094`), `KAFKA_TOPIC_PARTITIONS` (défaut 3), `KAFKA_TOPIC_REPLICATION_FACTOR` (défaut 1 ; = nombre de brokers Aiven)
 - Profil `prod` seulement : `SPRING_PROFILES_ACTIVE=prod`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `KAFKA_CA_CERT` (PEM inline)
+- `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` (optionnel, URL OTLP/HTTP des traces, `…/v1/traces`), `TRACING_SAMPLING_PROBABILITY` (optionnel, défaut 1.0)
 - `ADMIN_EMAIL` (optionnel) : au démarrage, ce compte passe ADMIN + accès IA, **seulement si aucun ADMIN n'existe encore** (pas de promotion à l'inscription : les emails ne sont pas vérifiés)
 - Les tests importent aussi `.env` : toute valeur qui influe sur un test doit être fixée dans `src/test/resources/config/application.properties`
 - Jamais en dur, jamais dans les logs

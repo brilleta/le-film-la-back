@@ -57,6 +57,15 @@ services:
       kafka:
         condition: service_healthy
 
+  # Observabilité en local, tout-en-un : collecteur OpenTelemetry + Tempo (traces) + Loki (logs) + Prometheus (métriques)
+  # + Grafana sur http://localhost:3000 (sans login). Image prévue pour le dev et les démos, pas pour la prod.
+  lgtm:
+    image: grafana/otel-lgtm:0.38.1
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+
   back:
     build: .
     ports:
@@ -67,11 +76,15 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # En local, le back est servi en HTTP : le cookie ne peut pas être Secure
       AUTH_COOKIE_SECURE: "false"
+      # Traces envoyées en OTLP/HTTP au conteneur lgtm (sans cette variable, rien n'est exporté)
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
     depends_on:
       postgres:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      lgtm:
+        condition: service_started
 
 volumes:
   postgres-data:
