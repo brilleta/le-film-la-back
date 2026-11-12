@@ -8,13 +8,16 @@ import org.springframework.kafka.config.TopicBuilder;
 
 /**
  * Déclaration des topics : créés au démarrage par {@code KafkaAdmin} s'ils n'existent pas.
- * Les partitions sont clées par utilisateur : l'ordre des événements d'un même compte est garanti.
+ * La clé de chaque topic fixe l'ordre garanti : par utilisateur pour les accès IA, par mode pour les recherches.
  */
 @Configuration
 public class KafkaTopics {
 
 	/** Transitions d'accès à la recherche IA (demande, grant, reject, revoke). */
 	public static final String AI_ACCESS_EVENTS = "ai-access.events";
+
+	/** Une recherche (classique ou IA), anonyme ; clé = mode de recherche. Source des statistiques temps réel. */
+	public static final String SEARCH_EVENTS = "search.events";
 
 	/** Suffixe des Dead Letter Topics (convention Spring Kafka). */
 	public static final String DLT_SUFFIX = ".DLT";
@@ -36,6 +39,11 @@ public class KafkaTopics {
 	@Bean
 	NewTopic aiAccessEventsTopic() {
 		return TopicBuilder.name(AI_ACCESS_EVENTS).partitions(partitions).replicas(replicationFactor).build();
+	}
+
+	@Bean
+	NewTopic searchEventsTopic() {
+		return TopicBuilder.name(SEARCH_EVENTS).partitions(partitions).replicas(replicationFactor).build();
 	}
 
 	/** Messages que le consommateur n'a pas pu traiter ; une partition suffit, ils sont rares et inspectés à la main. */
