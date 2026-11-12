@@ -1,6 +1,7 @@
 package com.lefilmla.back.exception;
 
 import com.lefilmla.back.dto.ErrorResponse;
+import com.lefilmla.back.stats.StatsUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -74,6 +75,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		log.error("Échec d'un service externe : {}", ex.getMessage());
 		return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
 			.body(new ErrorResponse("UPSTREAM_ERROR", "Service externe indisponible"));
+	}
+
+	@ExceptionHandler(StatsUnavailableException.class)
+	ResponseEntity<ErrorResponse> handleStatsUnavailable(StatsUnavailableException ex) {
+		return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+			.body(new ErrorResponse("STATS_UNAVAILABLE", ex.getMessage()));
 	}
 
 	@ExceptionHandler(Exception.class)
