@@ -7,7 +7,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,9 +26,8 @@ public class MovieController {
 	}
 
 	@GetMapping("/movies/search")
-	public JsonNode search(@RequestParam @NotBlank @Size(max = 200) String q,
-			@RequestHeader(name = SearchTracker.SESSION_HEADER, required = false) String searchSession) {
-		return searchTracker.classic(q, searchSession, () -> movieService.search(q));
+	public JsonNode search(@RequestParam @NotBlank @Size(max = 200) String q) {
+		return searchTracker.classic(q, () -> movieService.search(q));
 	}
 
 	@GetMapping("/movies/{type}/{id}")
