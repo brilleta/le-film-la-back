@@ -19,9 +19,14 @@ public class MovieService {
 		this.tmdbClient = tmdbClient;
 	}
 
-	@Cacheable(cacheNames = CacheConfig.TMDB, key = "'search:' + #query")
+	@Cacheable(cacheNames = CacheConfig.TMDB, key = "T(com.lefilmla.back.service.MovieService).searchCacheKey(#query)")
 	public JsonNode search(String query) {
 		return withoutPeople(tmdbClient.searchMulti(query));
+	}
+
+	/** Clé de cache de {@link #search}, partagée avec le suivi des recherches pour détecter les hits. */
+	public static String searchCacheKey(String query) {
+		return "search:" + query;
 	}
 
 	@Cacheable(cacheNames = CacheConfig.TMDB, key = "'details:' + #type + ':' + #id")
