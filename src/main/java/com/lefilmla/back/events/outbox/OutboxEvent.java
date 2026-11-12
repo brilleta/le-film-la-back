@@ -48,12 +48,22 @@ public class OutboxEvent {
 	@Column(name = "last_error")
 	private String lastError;
 
+	/** Contexte de trace de la requête d'origine (W3C), restauré par le relais pour prolonger la même trace. */
+	@Column(updatable = false)
+	private String traceparent;
+
 	protected OutboxEvent() {
 		// requis par JPA
 	}
 
 	public OutboxEvent(UUID eventId, String topic, String messageKey, String eventType, String payload,
 			Instant createdAt) {
+		this(eventId, topic, messageKey, eventType, payload, createdAt, null);
+	}
+
+	public OutboxEvent(UUID eventId, String topic, String messageKey, String eventType, String payload,
+			Instant createdAt, String traceparent) {
+		this.traceparent = traceparent;
 		this.eventId = eventId;
 		this.topic = topic;
 		this.messageKey = messageKey;
@@ -100,6 +110,10 @@ public class OutboxEvent {
 
 	public String getLastError() {
 		return lastError;
+	}
+
+	public String getTraceparent() {
+		return traceparent;
 	}
 
 	public void markPublished(Instant now) {

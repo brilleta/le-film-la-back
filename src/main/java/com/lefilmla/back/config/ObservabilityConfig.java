@@ -1,6 +1,10 @@
 package com.lefilmla.back.config;
 
+import com.lefilmla.back.observability.TraceParents;
 import io.micrometer.observation.ObservationPredicate;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
@@ -28,5 +32,12 @@ public class ObservabilityConfig {
 			}
 			return !name.equals("tasks.scheduled.execution") && !name.startsWith("spring.security.");
 		};
+	}
+
+	/** Tracer et propagateur absents quand le traçage est coupé (tests sans {@code @AutoConfigureTracing}). */
+	@Bean
+	TraceParents traceParents(ObjectProvider<Tracer> tracer, ObjectProvider<Propagator> propagator) {
+		return new TraceParents(tracer.getIfAvailable(() -> Tracer.NOOP),
+				propagator.getIfAvailable(() -> Propagator.NOOP));
 	}
 }

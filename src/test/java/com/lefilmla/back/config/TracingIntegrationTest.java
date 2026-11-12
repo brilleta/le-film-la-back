@@ -1,23 +1,20 @@
 package com.lefilmla.back.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import com.lefilmla.back.TestcontainersConfiguration;
+import com.lefilmla.back.support.InMemorySpans;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.micrometer.tracing.test.autoconfigure.AutoConfigureTracing;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -31,17 +28,8 @@ import org.springframework.test.web.servlet.MockMvc;
 		"management.opentelemetry.tracing.export.schedule-delay=50ms" })
 @AutoConfigureMockMvc
 @AutoConfigureTracing
-@Import({ TestcontainersConfiguration.class, TracingIntegrationTest.InMemoryExporter.class })
+@Import({ TestcontainersConfiguration.class, InMemorySpans.class })
 class TracingIntegrationTest {
-
-	@TestConfiguration(proxyBeanMethods = false)
-	static class InMemoryExporter {
-
-		@Bean
-		InMemorySpanExporter inMemorySpanExporter() {
-			return InMemorySpanExporter.create();
-		}
-	}
 
 	@Autowired
 	MockMvc mockMvc;
@@ -81,9 +69,6 @@ class TracingIntegrationTest {
 	}
 
 	private SpanData awaitSpan(SpanKind kind) {
-		return await().atMost(Duration.ofSeconds(5))
-			.until(() -> spans.getFinishedSpanItems().stream().filter(s -> s.getKind() == kind).findFirst(),
-					java.util.Optional::isPresent)
-			.orElseThrow();
+		return InMemorySpans.await(spans, span -> span.getKind() == kind);
 	}
 }

@@ -64,6 +64,9 @@ Chaque requête produit une **trace OpenTelemetry** : le span de la requête HTT
 - Instrumentation par Micrometer Observation (`spring-boot-starter-opentelemetry`), sans agent Java
 - Export OTLP/HTTP, activé seulement si `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` est défini : sans collecteur, rien n'est envoyé
 - En local, le conteneur `lgtm` (Grafana, Tempo, Loki, Prometheus) reçoit les traces : Grafana → *Explore* → *Tempo*
+- La trace traverse Kafka : le producteur ajoute le header W3C `traceparent`, le consommateur le reprend. Une demande d'accès IA se lit donc d'un bout à l'autre : requête HTTP → `outbox publish` → envoi Kafka → listener qui écrit l'historique
+- L'outbox publie plus tard, depuis un autre thread : le `traceparent` de la requête est enregistré avec l'événement (colonne `traceparent`) et restauré au moment de l'envoi. Le trou entre la fin de la requête et la publication se voit dans la trace
+- Kafka Streams (stats des recherches) n'est pas instrumenté : il garde les headers mais ne produit pas de span
 - Non tracés : les sondes `/actuator`, le flux SSE des stats, les tâches planifiées et les étapes internes de Spring Security
 - Le contenu des prompts envoyés à Claude n'est jamais enregistré dans les traces
 

@@ -1,5 +1,6 @@
 package com.lefilmla.back.events.outbox;
 
+import com.lefilmla.back.observability.TraceParents;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
@@ -21,17 +22,20 @@ public class Outbox {
 
 	private final ApplicationEventPublisher applicationEvents;
 
+	private final TraceParents traceParents;
+
 	public Outbox(OutboxEventRepository repository, JsonMapper jsonMapper,
-			ApplicationEventPublisher applicationEvents) {
+			ApplicationEventPublisher applicationEvents, TraceParents traceParents) {
 		this.repository = repository;
 		this.jsonMapper = jsonMapper;
 		this.applicationEvents = applicationEvents;
+		this.traceParents = traceParents;
 	}
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void append(String topic, String key, UUID eventId, String eventType, Object payload, Instant now) {
 		String json = jsonMapper.writeValueAsString(payload);
-		repository.save(new OutboxEvent(eventId, topic, key, eventType, json, now));
+		repository.save(new OutboxEvent(eventId, topic, key, eventType, json, now, traceParents.current()));
 		// Réveille le relais dès le commit, sans attendre le prochain passage planifié
 		applicationEvents.publishEvent(new OutboxAppended(eventId));
 	}

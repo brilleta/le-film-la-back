@@ -1,5 +1,6 @@
 package com.lefilmla.back.events.outbox;
 
+import com.lefilmla.back.observability.TraceParents;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -28,6 +29,9 @@ public class OutboxPublisher {
 
 	public static final String HEADER_EVENT_TYPE = "event-type";
 
+	/** Nom du span qui relie la requête d'origine à l'envoi Kafka, publié plus tard par le relais. */
+	public static final String PUBLISH_SPAN = "outbox publish";
+
 	private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
 
 	private final OutboxEventRepository repository;
@@ -40,9 +44,12 @@ public class OutboxPublisher {
 
 	private final Duration sendTimeout;
 
+	private final TraceParents traceParents;
+
 	public OutboxPublisher(OutboxEventRepository repository, KafkaTemplate<String, String> kafkaTemplate, Clock clock,
 			@Value("${outbox.batch-size:100}") int batchSize,
-			@Value("${outbox.send-timeout:10s}") Duration sendTimeout) {
+			@Value("${outbox.send-timeout:10s}") Duration sendTimeout, TraceParents traceParents) {
+		this.traceParents = traceParents;
 		this.repository = repository;
 		this.kafkaTemplate = kafkaTemplate;
 		this.clock = clock;
@@ -56,7 +63,8 @@ public class OutboxPublisher {
 		List<OutboxEvent> pending = repository.lockNextPending(batchSize);
 		int published = 0;
 		for (OutboxEvent event : pending) {
-			if (!send(event)) {
+			// Reprend la trace de la requête qui a écrit l'événement : l'envoi Kafka en devient un descendant
+			if (!traceParents.inSpan(PUBLISH_SPAN, event.getTraceparent(), () -> send(event))) {
 				break;
 			}
 			published++;

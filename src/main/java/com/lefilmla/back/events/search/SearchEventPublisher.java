@@ -2,6 +2,7 @@ package com.lefilmla.back.events.search;
 
 import com.lefilmla.back.config.KafkaTopics;
 import com.lefilmla.back.events.outbox.OutboxPublisher;
+import io.micrometer.context.ContextSnapshotFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -35,6 +36,8 @@ public class SearchEventPublisher implements DisposableBean {
 
 	private final ThreadPoolExecutor executor;
 
+	private final ContextSnapshotFactory contextSnapshots = ContextSnapshotFactory.builder().build();
+
 	public SearchEventPublisher(KafkaTemplate<String, String> kafkaTemplate, JsonMapper jsonMapper,
 			@Value("${search-events.queue-capacity:1000}") int queueCapacity) {
 		this.kafkaTemplate = kafkaTemplate;
@@ -46,7 +49,9 @@ public class SearchEventPublisher implements DisposableBean {
 
 	public void publish(SearchEvent event) {
 		try {
-			executor.execute(() -> send(event));
+			// Le thread dédié ne voit pas la trace de la requête : on la capture ici et on la restaure là-bas,
+			// pour que l'envoi Kafka apparaisse dans la trace de la recherche
+			executor.execute(contextSnapshots.captureAll().wrap(() -> send(event)));
 		}
 		catch (RejectedExecutionException ex) {
 			// Arrêt en cours : la mesure est perdue, la recherche continue

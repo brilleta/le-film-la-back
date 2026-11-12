@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lefilmla.back.observability.TraceParents;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -32,7 +33,7 @@ class OutboxPublisherTest {
 	private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
 
 	private final OutboxPublisher publisher = new OutboxPublisher(repository, kafkaTemplate,
-			Clock.fixed(NOW, ZoneOffset.UTC), 10, Duration.ofSeconds(1));
+			Clock.fixed(NOW, ZoneOffset.UTC), 10, Duration.ofSeconds(1), TraceParents.noop());
 
 	@Test
 	void publishesPendingEventsInOrderWithKeyAndHeaders() {
