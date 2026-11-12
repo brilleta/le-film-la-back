@@ -34,3 +34,20 @@ services:
       # À renseigner après la première inscription (redémarrage automatique → promotion ADMIN)
       - key: ADMIN_EMAIL
         sync: false
+      # Kafka Aiven : profil prod = SASL_SSL (voir application-prod.properties)
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # Hôte:port SASL du service Aiven (onglet Overview, « Service URI », une fois SASL activé)
+      - key: KAFKA_BOOTSTRAP_SERVERS
+        sync: false
+      # Utilisateur du service Aiven (avnadmin ou un utilisateur dédié) et son mot de passe
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      # Certificat CA du projet Aiven, contenu PEM complet (multiligne, -----BEGIN CERTIFICATE----- inclus)
+      - key: KAFKA_CA_CERT
+        sync: false
+      # = nombre de brokers du plan Aiven (1 sur le plan free)
+      - key: KAFKA_TOPIC_REPLICATION_FACTOR
+        sync: false

@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.lefilmla.back.PostgresTestConfiguration;
+import com.lefilmla.back.TestcontainersConfiguration;
 import com.lefilmla.back.entity.AiAccess;
 import com.lefilmla.back.entity.Role;
 import com.lefilmla.back.entity.User;
@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(PostgresTestConfiguration.class)
+@Import(TestcontainersConfiguration.class)
 class AdminControllerTest {
 
 	@Autowired

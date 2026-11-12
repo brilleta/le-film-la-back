@@ -4,6 +4,8 @@ import com.lefilmla.back.dto.AdminUserResponse;
 import com.lefilmla.back.dto.UserResponse;
 import com.lefilmla.back.entity.AiAccess;
 import com.lefilmla.back.entity.User;
+import com.lefilmla.back.events.AiAccessEventPublisher;
+import com.lefilmla.back.events.AiAccessEventType;
 import com.lefilmla.back.exception.ConflictException;
 import com.lefilmla.back.exception.ForbiddenException;
 import com.lefilmla.back.exception.UnauthenticatedException;
@@ -11,6 +13,7 @@ import com.lefilmla.back.exception.UserNotFoundException;
 import com.lefilmla.back.repository.UserRepository;
 import com.lefilmla.back.security.AuthenticatedUser;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
@@ -36,15 +39,18 @@ public class AiAccessService {
 
 	private final UserRepository userRepository;
 
+	private final AiAccessEventPublisher events;
+
 	private final Clock clock;
 
 	@Autowired
-	public AiAccessService(UserRepository userRepository) {
-		this(userRepository, Clock.systemUTC());
+	public AiAccessService(UserRepository userRepository, AiAccessEventPublisher events) {
+		this(userRepository, events, Clock.systemUTC());
 	}
 
-	AiAccessService(UserRepository userRepository, Clock clock) {
+	AiAccessService(UserRepository userRepository, AiAccessEventPublisher events, Clock clock) {
 		this.userRepository = userRepository;
+		this.events = events;
 		this.clock = clock;
 	}
 
@@ -72,7 +78,10 @@ public class AiAccessService {
 				default -> "Demande d'accès impossible dans l'état actuel";
 			});
 		}
-		user.requestAiAccess(clock.instant());
+		AiAccess previous = user.getAiAccess();
+		Instant now = clock.instant();
+		user.requestAiAccess(now);
+		events.publish(AiAccessEventType.REQUESTED, user, previous, null, now);
 		return UserResponse.from(user);
 	}
 
@@ -80,7 +89,7 @@ public class AiAccessService {
 	public AdminUserResponse grant(AuthenticatedUser admin, UUID userId) {
 		User user = findUser(userId);
 		if (user.getAiAccess() != AiAccess.GRANTED) {
-			user.decideAiAccess(AiAccess.GRANTED, userRepository.getReferenceById(admin.id()), clock.instant());
+			decide(user, AiAccess.GRANTED, AiAccessEventType.GRANTED, admin);
 		}
 		return AdminUserResponse.from(user);
 	}
@@ -93,7 +102,7 @@ public class AiAccessService {
 			throw new ConflictException(INVALID_TRANSITION,
 					"Seule une demande en attente peut être refusée (statut actuel : " + user.getAiAccess() + ")");
 		}
-		user.decideAiAccess(AiAccess.REJECTED, userRepository.getReferenceById(admin.id()), clock.instant());
+		decide(user, AiAccess.REJECTED, AiAccessEventType.REJECTED, admin);
 		return AdminUserResponse.from(user);
 	}
 
@@ -105,8 +114,17 @@ public class AiAccessService {
 			throw new ConflictException(INVALID_TRANSITION,
 					"Seul un accès accordé peut être retiré (statut actuel : " + user.getAiAccess() + ")");
 		}
-		user.decideAiAccess(AiAccess.NONE, userRepository.getReferenceById(admin.id()), clock.instant());
+		decide(user, AiAccess.NONE, AiAccessEventType.REVOKED, admin);
 		return AdminUserResponse.from(user);
+	}
+
+	/** Applique la décision et dépose l'événement correspondant dans l'outbox (même transaction). */
+	private void decide(User user, AiAccess status, AiAccessEventType type, AuthenticatedUser admin) {
+		AiAccess previous = user.getAiAccess();
+		Instant now = clock.instant();
+		User decidedBy = userRepository.getReferenceById(admin.id());
+		user.decideAiAccess(status, decidedBy, now);
+		events.publish(type, user, previous, decidedBy, now);
 	}
 
 	private User findUser(UUID userId) {

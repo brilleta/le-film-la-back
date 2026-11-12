@@ -16,6 +16,47 @@ services:
       timeout: 3s
       retries: 10
 
+  # Kafka en mode KRaft (sans ZooKeeper), un seul nœud broker + controller.
+  # Deux listeners : INTERNAL pour les conteneurs (kafka:9092), EXTERNAL pour l'hôte (localhost:9094).
+  # Pas de volume : les données de dev sont jetables, et l'image tourne en utilisateur non root.
+  kafka:
+    image: apache/kafka:4.1.0
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Un seul broker : les topics internes ne peuvent pas être répliqués
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # Interface web pour inspecter topics, messages et consumer groups : http://localhost:8090
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.3.0
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   back:
     build: .
     ports:
@@ -23,10 +64,13 @@ services:
     env_file: .env
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/lefilmla
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # En local, le back est servi en HTTP : le cookie ne peut pas être Secure
       AUTH_COOKIE_SECURE: "false"
     depends_on:
       postgres:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
 volumes:

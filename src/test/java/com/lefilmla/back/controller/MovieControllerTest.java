@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.lefilmla.back.PostgresTestConfiguration;
+import com.lefilmla.back.TestcontainersConfiguration;
 import com.lefilmla.back.client.TmdbClient;
 import com.lefilmla.back.dto.TitleType;
 import com.lefilmla.back.exception.TmdbNotFoundException;
@@ -22,7 +22,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
-@Import(PostgresTestConfiguration.class)
+@Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class MovieControllerTest {
 

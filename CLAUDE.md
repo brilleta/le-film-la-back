@@ -2,7 +2,7 @@
 
 API de l'appli de recherche de films et séries "le-film-la".
 Le front React est dans un repo séparé et appelle ce back via `/api` (proxy nginx en prod).
-Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postgres Neon ; voir `render.yaml`. Le back s'endort après 15 min sans trafic.
+Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postgres Neon + Kafka Aiven (free, SASL_SSL via le profil `prod`, `application-prod.properties`) ; voir `render.yaml`. Le back s'endort après 15 min sans trafic.
 
 ## Stack
 - Java 21, Spring Boot, Maven (wrapper)
@@ -10,16 +10,19 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - Caffeine (cache), Bucket4j (rate limiting), Actuator (`/actuator/health` uniquement)
 - PostgreSQL, Spring Data JPA, Flyway (`ddl-auto=validate` : le schéma ne change que par migration `db/migration/V*__*.sql`)
 - Spring Security 7 : BCrypt, JWT HS256 (`spring-security-oauth2-jose`) dans un cookie httpOnly, CSRF en mode SPA
-- Tests : Testcontainers PostgreSQL (`PostgresTestConfiguration` à importer dans tout `@SpringBootTest`) ; Docker requis pour `./mvnw verify`
+- Kafka (`spring-boot-starter-kafka`) : KRaft local via docker compose (`localhost:9094` depuis l'hôte, `kafka:9092` dans le réseau compose), Kafka UI sur `http://localhost:8090` ; topics déclarés dans `config/KafkaTopics` et créés au démarrage ; un broker absent n'empêche pas le démarrage (`fail-fast=false`)
+- Tests : Testcontainers PostgreSQL + Kafka (`TestcontainersConfiguration` à importer dans tout `@SpringBootTest`) ; Docker requis pour `./mvnw verify`
 
 ## Commandes
 - `./mvnw spring-boot:run` / `./mvnw test` / `./mvnw verify`
-- `docker compose up --build` pour lancer en local
+- `docker compose up --build` pour lancer en local (`docker compose up -d postgres kafka kafka-ui` pour ne lancer que l'infra et le back via `spring-boot:run`)
 
 ## Variables d'environnement
 - `ANTHROPIC_API_KEY`, `TMDB_TOKEN`, `ANTHROPIC_MODEL` (optionnel)
 - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
 - `JWT_SECRET` (base64, 32 octets min., sinon refus de démarrer), `JWT_TTL` (optionnel, défaut `PT24H`), `AUTH_COOKIE_SECURE` (optionnel, défaut `true` ; `false` seulement en dev HTTP)
+- `KAFKA_BOOTSTRAP_SERVERS` (défaut `localhost:9094`), `KAFKA_TOPIC_PARTITIONS` (défaut 3), `KAFKA_TOPIC_REPLICATION_FACTOR` (défaut 1 ; = nombre de brokers Aiven)
+- Profil `prod` seulement : `SPRING_PROFILES_ACTIVE=prod`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `KAFKA_CA_CERT` (PEM inline)
 - `ADMIN_EMAIL` (optionnel) : au démarrage, ce compte passe ADMIN + accès IA, **seulement si aucun ADMIN n'existe encore** (pas de promotion à l'inscription : les emails ne sont pas vérifiés)
 - Les tests importent aussi `.env` : toute valeur qui influe sur un test doit être fixée dans `src/test/resources/config/application.properties`
 - Jamais en dur, jamais dans les logs
@@ -33,7 +36,8 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `entity/`, `repository/` : entités JPA et repositories Spring Data
 - `security/` : filtre JWT cookie, filtre CSRF, cookies d'auth, réponses 401/403
 - `dto/` : records Java
-- `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT
+- `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT, topics Kafka (`KafkaTopics`), planification (`SchedulingConfig`, bean `Clock`)
+- `events/` : événements métier (`AiAccessEvent`, `AiAccessEventPublisher`), listener `AiAccessEventsListener` (groupe `le-film-la-back.ai-access-history`) ; `events/history/` : table `ai_access_history` alimentée par le listener, insertion idempotente `INSERT … ON CONFLICT (event_id) DO NOTHING` ; `config/KafkaConsumerConfig` : `DefaultErrorHandler`, 2 nouvelles tentatives à 1 s puis DLT `<topic>.DLT` (cause en headers `kafka_dlt-*`), `InvalidEventException` non réessayée ; `events/outbox/` : outbox transactionnel (`Outbox.append` exige une transaction, `OutboxRelay` publie après commit et toutes les `outbox.poll-interval`, `OutboxPublisher` envoie séquentiellement et s'arrête au premier échec pour garder l'ordre)
 - `exception/` : @ControllerAdvice et exceptions métier
 
 ## Contrat d'API (ne pas le casser : le front en dépend)
@@ -59,7 +63,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 ### Accès à la recherche IA
 - Transitions : `NONE`/`REJECTED` → `PENDING` (demande) ; `NONE`/`PENDING`/`REJECTED` → `GRANTED` (grant, idempotent si déjà `GRANTED`) ; `PENDING` → `REJECTED` (reject) ; `GRANTED` → `NONE` (revoke)
 - Transition invalide : 409 `INVALID_AI_ACCESS_TRANSITION` avec message explicite
-- Seule la dernière décision est conservée (date + admin) ; historique complet prévu plus tard (événements Kafka)
+- Seule la dernière décision est conservée sur `users` ; chaque transition dépose un `AiAccessEvent` (REQUESTED/GRANTED/REJECTED/REVOKED, statuts avant/après, admin décideur, `schemaVersion`) dans `outbox_events`, publié sur `ai-access.events` clé par id utilisateur, headers `event-id` et `event-type`. Livraison au moins une fois : les consommateurs dédoublonnent sur `eventId`. Le listener du back alimente `ai_access_history` (cohérence à terme : quelques ms après la réponse HTTP)
 - `POST /api/ai/access-request` → 200 `User` (statut `PENDING`) ; 409 si déjà `PENDING` ou `GRANTED`
 
 ### Admin (rôle ADMIN, sinon 403 `FORBIDDEN`)
@@ -67,6 +71,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
   - `AdminUser` : `{ "id", "email", "username", "role", "aiAccess", "createdAt", "aiAccessRequestedAt", "aiAccessDecidedAt", "aiAccessDecidedBy": { "id", "username" } | null }`
   - `q` : recherche dans l'email ou le pseudo, insensible à la casse ; tri : demandes les plus récentes, puis inscriptions
 - `POST /api/admin/users/{id}/ai-access/grant` | `reject` | `revoke` → 200 `AdminUser` ; 404 `NOT_FOUND` ; 409 transition invalide ou `CONCURRENT_MODIFICATION`
+- `GET /api/admin/users/{id}/ai-access/history` → `[{ "eventId", "type": "REQUESTED"|"GRANTED"|"REJECTED"|"REVOKED", "previousStatus", "newStatus", "decidedBy": { "id", "username" } | null, "occurredAt" }]`, le plus récent d'abord ; 404 `NOT_FOUND`. Alimenté par Kafka : juste après une action, le front doit refetch (quelques ms de retard possibles)
 - Un admin ne peut ni révoquer ni refuser son propre accès : 403 `SELF_ACCESS_CHANGE`
 
 ### CSRF

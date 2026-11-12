@@ -3,12 +3,18 @@ package com.lefilmla.back.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.lefilmla.back.entity.AiAccess;
 import com.lefilmla.back.entity.Role;
 import com.lefilmla.back.entity.User;
+import com.lefilmla.back.events.AiAccessEventPublisher;
+import com.lefilmla.back.events.AiAccessEventType;
 import com.lefilmla.back.exception.ConflictException;
 import com.lefilmla.back.exception.ForbiddenException;
 import com.lefilmla.back.exception.UnauthenticatedException;
@@ -32,7 +38,10 @@ class AiAccessServiceTest {
 
 	private final UserRepository userRepository = mock(UserRepository.class);
 
-	private final AiAccessService service = new AiAccessService(userRepository, Clock.fixed(NOW, ZoneOffset.UTC));
+	private final AiAccessEventPublisher events = mock(AiAccessEventPublisher.class);
+
+	private final AiAccessService service = new AiAccessService(userRepository, events,
+			Clock.fixed(NOW, ZoneOffset.UTC));
 
 	private User adminEntity;
 
@@ -67,6 +76,7 @@ class AiAccessServiceTest {
 		assertThat(user.getAiAccessRequestedAt()).isEqualTo(NOW);
 		assertThat(user.getAiAccessDecidedAt()).isNull();
 		assertThat(user.getAiAccessDecidedBy()).isNull();
+		verify(events).publish(AiAccessEventType.REQUESTED, user, from, null, NOW);
 	}
 
 	@ParameterizedTest
@@ -78,6 +88,7 @@ class AiAccessServiceTest {
 			.isInstanceOfSatisfying(ConflictException.class,
 					ex -> assertThat(ex.code()).isEqualTo("INVALID_AI_ACCESS_TRANSITION"));
 		assertThat(user.getAiAccess()).isEqualTo(from);
+		verifyNoInteractions(events);
 	}
 
 	@ParameterizedTest
@@ -91,6 +102,7 @@ class AiAccessServiceTest {
 		assertThat(user.getAiAccessDecidedAt()).isEqualTo(NOW);
 		assertThat(user.getAiAccessDecidedBy()).isSameAs(adminEntity);
 		assertThat(response.aiAccessDecidedBy().id()).isEqualTo(admin.id());
+		verify(events).publish(AiAccessEventType.GRANTED, user, from, adminEntity, NOW);
 	}
 
 	@Test
@@ -100,12 +112,14 @@ class AiAccessServiceTest {
 		service.grant(admin, user.getId());
 
 		assertThat(user.getAiAccessDecidedBy()).isNull();
+		verifyNoInteractions(events);
 	}
 
 	@Test
 	void rejectOnlyFromPending() {
 		User pending = stored(AiAccess.PENDING);
 		assertThat(service.reject(admin, pending.getId()).aiAccess()).isEqualTo(AiAccess.REJECTED);
+		verify(events).publish(AiAccessEventType.REJECTED, pending, AiAccess.PENDING, adminEntity, NOW);
 
 		for (AiAccess from : new AiAccess[] { AiAccess.NONE, AiAccess.GRANTED, AiAccess.REJECTED }) {
 			User user = stored(from);
@@ -120,11 +134,13 @@ class AiAccessServiceTest {
 		User granted = stored(AiAccess.GRANTED);
 		assertThat(service.revoke(admin, granted.getId()).aiAccess()).isEqualTo(AiAccess.NONE);
 		assertThat(granted.getAiAccessDecidedBy()).isSameAs(adminEntity);
+		verify(events).publish(AiAccessEventType.REVOKED, granted, AiAccess.GRANTED, adminEntity, NOW);
 
 		for (AiAccess from : new AiAccess[] { AiAccess.NONE, AiAccess.PENDING, AiAccess.REJECTED }) {
 			User user = stored(from);
 			assertThatThrownBy(() -> service.revoke(admin, user.getId())).isInstanceOf(ConflictException.class);
 		}
+		verify(events).publish(eq(AiAccessEventType.REVOKED), any(), any(), any(), any());
 	}
 
 	@Test
