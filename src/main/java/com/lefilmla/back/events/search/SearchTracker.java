@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,12 @@ import tools.jackson.databind.JsonNode;
 @Component
 public class SearchTracker {
 
+	/** Header envoyé par le front : identifiant aléatoire par onglet, pour regrouper les frappes d'une recherche. */
+	public static final String SESSION_HEADER = "X-Search-Session";
+
+	/** Valeur fournie par le client : on n'accepte qu'un identifiant court et inoffensif (UUID en pratique). */
+	private static final Pattern SESSION_PATTERN = Pattern.compile("[A-Za-z0-9-]{8,64}");
+
 	private final SearchEventPublisher publisher;
 
 	private final CacheManager cacheManager;
@@ -36,38 +43,44 @@ public class SearchTracker {
 		this.clock = clock;
 	}
 
-	public JsonNode classic(String query, Supplier<JsonNode> search) {
+	public JsonNode classic(String query, String sessionId, Supplier<JsonNode> search) {
 		boolean cached = isCached(CacheConfig.TMDB, MovieService.searchCacheKey(query));
-		return track(SearchMode.CLASSIC, query, cached, search, SearchTracker::summarizeClassic);
+		return track(SearchMode.CLASSIC, query, sessionId, cached, search, SearchTracker::summarizeClassic);
 	}
 
-	public AiSearchResponse ai(String description, Supplier<AiSearchResponse> search) {
+	public AiSearchResponse ai(String description, String sessionId, Supplier<AiSearchResponse> search) {
 		boolean cached = isCached(CacheConfig.AI, AiSearchService.normalize(description));
-		return track(SearchMode.AI, description, cached, search,
+		return track(SearchMode.AI, description, sessionId, cached, search,
 				response -> summary(response.results().size(),
 						response.results().stream().map(AiSearchResult::title).toList()));
 	}
 
-	private <T> T track(SearchMode mode, String query, boolean cacheHit, Supplier<T> search,
+	private <T> T track(SearchMode mode, String query, String sessionId, boolean cacheHit, Supplier<T> search,
 			Function<T, Summary> summarize) {
+		String session = validSession(sessionId);
 		long start = System.nanoTime();
 		try {
 			T result = search.get();
 			Summary summary = summarize.apply(result);
-			publish(mode, query, summary.resultCount(), summary.titles(), start, cacheHit, SearchOutcome.SUCCESS);
+			publish(mode, query, session, summary.resultCount(), summary.titles(), start, cacheHit,
+					SearchOutcome.SUCCESS);
 			return result;
 		}
 		catch (RuntimeException ex) {
-			publish(mode, query, 0, List.of(), start, false, SearchOutcome.ERROR);
+			publish(mode, query, session, 0, List.of(), start, false, SearchOutcome.ERROR);
 			throw ex;
 		}
 	}
 
-	private void publish(SearchMode mode, String query, int resultCount, List<String> titles, long start,
-			boolean cacheHit, SearchOutcome outcome) {
+	private void publish(SearchMode mode, String query, String sessionId, int resultCount, List<String> titles,
+			long start, boolean cacheHit, SearchOutcome outcome) {
 		long latencyMs = (System.nanoTime() - start) / 1_000_000;
 		publisher.publish(new SearchEvent(SearchEvent.SCHEMA_VERSION, UUID.randomUUID(), mode, anonymize(query),
-				resultCount, titles, latencyMs, cacheHit, outcome, clock.instant()));
+				resultCount, titles, latencyMs, cacheHit, outcome, clock.instant(), sessionId));
+	}
+
+	static String validSession(String sessionId) {
+		return sessionId != null && SESSION_PATTERN.matcher(sessionId).matches() ? sessionId : null;
 	}
 
 	private boolean isCached(String cacheName, Object key) {

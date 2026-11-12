@@ -7,6 +7,7 @@ import com.lefilmla.back.service.AiSearchService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,7 +25,9 @@ public class AiSearchController {
 	}
 
 	@PostMapping("/search")
-	public AiSearchResponse search(@Valid @RequestBody AiSearchRequest request) {
-		return searchTracker.ai(request.description(), () -> aiSearchService.search(request.description()));
+	public AiSearchResponse search(@Valid @RequestBody AiSearchRequest request,
+			@RequestHeader(name = SearchTracker.SESSION_HEADER, required = false) String searchSession) {
+		return searchTracker.ai(request.description(), searchSession,
+				() -> aiSearchService.search(request.description()));
 	}
 }

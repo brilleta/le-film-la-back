@@ -52,7 +52,9 @@ class SearchEventsIntegrationTest {
 		try (var consumer = consumerFactory.createConsumer("search-it-" + UUID.randomUUID(), null)) {
 			consumer.subscribe(List.of(KafkaTopics.SEARCH_EVENTS));
 
-			mockMvc.perform(get("/api/movies/search").param("q", query)).andExpect(status().isOk());
+			String tab = UUID.randomUUID().toString();
+			mockMvc.perform(get("/api/movies/search").param("q", query).header(SearchTracker.SESSION_HEADER, tab))
+				.andExpect(status().isOk());
 			mockMvc.perform(get("/api/movies/search").param("q", query)).andExpect(status().isOk());
 
 			List<SearchEvent> received = new ArrayList<>();
@@ -71,6 +73,8 @@ class SearchEventsIntegrationTest {
 			assertThat(received.get(0).resultCount()).isEqualTo(1);
 			assertThat(received.get(0).titles()).containsExactly("Dune");
 			assertThat(received).extracting(SearchEvent::outcome).containsOnly(SearchOutcome.SUCCESS);
+			// Header facultatif : la première requête porte l'onglet, la seconde n'en a pas
+			assertThat(received).extracting(SearchEvent::sessionId).containsExactly(tab, null);
 		}
 	}
 }
