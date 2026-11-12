@@ -51,6 +51,8 @@ Pour tout lancer en conteneurs, back compris : `docker compose up --build`.
 |---|---|---|
 | `ai-access.events` | Transitions d'accès à la recherche IA (demande, grant, reject, revoke) | id utilisateur |
 
+Les événements passent par un **outbox transactionnel** : écrits dans la table `outbox_events` dans la même transaction que la donnée métier, puis relayés vers Kafka juste après le commit et par un balayage périodique. Un broker indisponible ne fait perdre aucun événement, il retarde seulement leur publication. Livraison au moins une fois : les consommateurs dédoublonnent sur l'`event-id` porté en header.
+
 ## Tests
 
 ```sh

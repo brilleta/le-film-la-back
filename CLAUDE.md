@@ -35,7 +35,8 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `entity/`, `repository/` : entités JPA et repositories Spring Data
 - `security/` : filtre JWT cookie, filtre CSRF, cookies d'auth, réponses 401/403
 - `dto/` : records Java
-- `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT, topics Kafka (`KafkaTopics`)
+- `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT, topics Kafka (`KafkaTopics`), planification (`SchedulingConfig`, bean `Clock`)
+- `events/` : événements métier (`AiAccessEvent`, `AiAccessEventPublisher`) ; `events/outbox/` : outbox transactionnel (`Outbox.append` exige une transaction, `OutboxRelay` publie après commit et toutes les `outbox.poll-interval`, `OutboxPublisher` envoie séquentiellement et s'arrête au premier échec pour garder l'ordre)
 - `exception/` : @ControllerAdvice et exceptions métier
 
 ## Contrat d'API (ne pas le casser : le front en dépend)
@@ -61,7 +62,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 ### Accès à la recherche IA
 - Transitions : `NONE`/`REJECTED` → `PENDING` (demande) ; `NONE`/`PENDING`/`REJECTED` → `GRANTED` (grant, idempotent si déjà `GRANTED`) ; `PENDING` → `REJECTED` (reject) ; `GRANTED` → `NONE` (revoke)
 - Transition invalide : 409 `INVALID_AI_ACCESS_TRANSITION` avec message explicite
-- Seule la dernière décision est conservée (date + admin) ; historique complet prévu plus tard (événements Kafka)
+- Seule la dernière décision est conservée sur `users` ; chaque transition dépose un `AiAccessEvent` (REQUESTED/GRANTED/REJECTED/REVOKED, statuts avant/après, admin décideur, `schemaVersion`) dans `outbox_events`, publié sur `ai-access.events` clé par id utilisateur, headers `event-id` et `event-type`. Livraison au moins une fois : les consommateurs dédoublonnent sur `eventId`. Historique consommé côté back : étape suivante
 - `POST /api/ai/access-request` → 200 `User` (statut `PENDING`) ; 409 si déjà `PENDING` ou `GRANTED`
 
 ### Admin (rôle ADMIN, sinon 403 `FORBIDDEN`)
