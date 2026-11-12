@@ -50,8 +50,11 @@ Pour tout lancer en conteneurs, back compris : `docker compose up --build`.
 | Topic | Contenu | Clé |
 |---|---|---|
 | `ai-access.events` | Transitions d'accès à la recherche IA (demande, grant, reject, revoke) | id utilisateur |
+| `ai-access.events.DLT` | Messages que le consommateur n'a pas pu traiter, avec la cause en headers | idem |
 
 Les événements passent par un **outbox transactionnel** : écrits dans la table `outbox_events` dans la même transaction que la donnée métier, puis relayés vers Kafka juste après le commit et par un balayage périodique. Un broker indisponible ne fait perdre aucun événement, il retarde seulement leur publication. Livraison au moins une fois : les consommateurs dédoublonnent sur l'`event-id` porté en header.
+
+Côté consommation, le back lui-même écoute `ai-access.events` et construit l'**historique des accès IA** (`ai_access_history`), exposé aux admins. L'insertion est idempotente (`INSERT … ON CONFLICT DO NOTHING` sur l'identifiant d'événement), les erreurs transitoires sont réessayées, et un message illisible part en Dead Letter Topic sans bloquer la partition.
 
 ## Tests
 
@@ -88,7 +91,7 @@ Voir le contrat détaillé dans `CLAUDE.md`. En résumé :
 - `POST /api/ai/search` (connecté, accès IA accordé)
 - `POST /api/auth/register|login|logout`, `GET /api/auth/me`
 - `POST /api/ai/access-request`
-- `GET /api/admin/users`, `POST /api/admin/users/{id}/ai-access/grant|reject|revoke` (rôle ADMIN)
+- `GET /api/admin/users`, `POST /api/admin/users/{id}/ai-access/grant|reject|revoke`, `GET /api/admin/users/{id}/ai-access/history` (rôle ADMIN)
 
 ## Déploiement
 

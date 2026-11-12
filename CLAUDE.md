@@ -36,7 +36,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `security/` : filtre JWT cookie, filtre CSRF, cookies d'auth, réponses 401/403
 - `dto/` : records Java
 - `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT, topics Kafka (`KafkaTopics`), planification (`SchedulingConfig`, bean `Clock`)
-- `events/` : événements métier (`AiAccessEvent`, `AiAccessEventPublisher`) ; `events/outbox/` : outbox transactionnel (`Outbox.append` exige une transaction, `OutboxRelay` publie après commit et toutes les `outbox.poll-interval`, `OutboxPublisher` envoie séquentiellement et s'arrête au premier échec pour garder l'ordre)
+- `events/` : événements métier (`AiAccessEvent`, `AiAccessEventPublisher`), listener `AiAccessEventsListener` (groupe `le-film-la-back.ai-access-history`) ; `events/history/` : table `ai_access_history` alimentée par le listener, insertion idempotente `INSERT … ON CONFLICT (event_id) DO NOTHING` ; `config/KafkaConsumerConfig` : `DefaultErrorHandler`, 2 nouvelles tentatives à 1 s puis DLT `<topic>.DLT` (cause en headers `kafka_dlt-*`), `InvalidEventException` non réessayée ; `events/outbox/` : outbox transactionnel (`Outbox.append` exige une transaction, `OutboxRelay` publie après commit et toutes les `outbox.poll-interval`, `OutboxPublisher` envoie séquentiellement et s'arrête au premier échec pour garder l'ordre)
 - `exception/` : @ControllerAdvice et exceptions métier
 
 ## Contrat d'API (ne pas le casser : le front en dépend)
@@ -62,7 +62,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 ### Accès à la recherche IA
 - Transitions : `NONE`/`REJECTED` → `PENDING` (demande) ; `NONE`/`PENDING`/`REJECTED` → `GRANTED` (grant, idempotent si déjà `GRANTED`) ; `PENDING` → `REJECTED` (reject) ; `GRANTED` → `NONE` (revoke)
 - Transition invalide : 409 `INVALID_AI_ACCESS_TRANSITION` avec message explicite
-- Seule la dernière décision est conservée sur `users` ; chaque transition dépose un `AiAccessEvent` (REQUESTED/GRANTED/REJECTED/REVOKED, statuts avant/après, admin décideur, `schemaVersion`) dans `outbox_events`, publié sur `ai-access.events` clé par id utilisateur, headers `event-id` et `event-type`. Livraison au moins une fois : les consommateurs dédoublonnent sur `eventId`. Historique consommé côté back : étape suivante
+- Seule la dernière décision est conservée sur `users` ; chaque transition dépose un `AiAccessEvent` (REQUESTED/GRANTED/REJECTED/REVOKED, statuts avant/après, admin décideur, `schemaVersion`) dans `outbox_events`, publié sur `ai-access.events` clé par id utilisateur, headers `event-id` et `event-type`. Livraison au moins une fois : les consommateurs dédoublonnent sur `eventId`. Le listener du back alimente `ai_access_history` (cohérence à terme : quelques ms après la réponse HTTP)
 - `POST /api/ai/access-request` → 200 `User` (statut `PENDING`) ; 409 si déjà `PENDING` ou `GRANTED`
 
 ### Admin (rôle ADMIN, sinon 403 `FORBIDDEN`)
@@ -70,6 +70,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
   - `AdminUser` : `{ "id", "email", "username", "role", "aiAccess", "createdAt", "aiAccessRequestedAt", "aiAccessDecidedAt", "aiAccessDecidedBy": { "id", "username" } | null }`
   - `q` : recherche dans l'email ou le pseudo, insensible à la casse ; tri : demandes les plus récentes, puis inscriptions
 - `POST /api/admin/users/{id}/ai-access/grant` | `reject` | `revoke` → 200 `AdminUser` ; 404 `NOT_FOUND` ; 409 transition invalide ou `CONCURRENT_MODIFICATION`
+- `GET /api/admin/users/{id}/ai-access/history` → `[{ "eventId", "type": "REQUESTED"|"GRANTED"|"REJECTED"|"REVOKED", "previousStatus", "newStatus", "decidedBy": { "id", "username" } | null, "occurredAt" }]`, le plus récent d'abord ; 404 `NOT_FOUND`. Alimenté par Kafka : juste après une action, le front doit refetch (quelques ms de retard possibles)
 - Un admin ne peut ni révoquer ni refuser son propre accès : 403 `SELF_ACCESS_CHANGE`
 
 ### CSRF

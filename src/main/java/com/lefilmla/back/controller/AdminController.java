@@ -1,14 +1,17 @@
 package com.lefilmla.back.controller;
 
 import com.lefilmla.back.dto.AdminUserResponse;
+import com.lefilmla.back.dto.AiAccessHistoryResponse;
 import com.lefilmla.back.dto.PageResponse;
 import com.lefilmla.back.entity.AiAccess;
+import com.lefilmla.back.events.history.AiAccessHistoryService;
 import com.lefilmla.back.security.AuthenticatedUser;
 import com.lefilmla.back.service.AdminUserService;
 import com.lefilmla.back.service.AiAccessService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,9 +30,13 @@ public class AdminController {
 
 	private final AiAccessService aiAccessService;
 
-	public AdminController(AdminUserService adminUserService, AiAccessService aiAccessService) {
+	private final AiAccessHistoryService historyService;
+
+	public AdminController(AdminUserService adminUserService, AiAccessService aiAccessService,
+			AiAccessHistoryService historyService) {
 		this.adminUserService = adminUserService;
 		this.aiAccessService = aiAccessService;
+		this.historyService = historyService;
 	}
 
 	@GetMapping
@@ -38,6 +45,12 @@ public class AdminController {
 			@RequestParam(defaultValue = "0") @Min(0) int page,
 			@RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
 		return adminUserService.list(aiAccess, q, page, size);
+	}
+
+	/** Historique des transitions, le plus récent d'abord. Alimenté par Kafka : cohérence à terme (quelques ms). */
+	@GetMapping("/{id}/ai-access/history")
+	List<AiAccessHistoryResponse> history(@PathVariable UUID id) {
+		return historyService.history(id);
 	}
 
 	@PostMapping("/{id}/ai-access/grant")

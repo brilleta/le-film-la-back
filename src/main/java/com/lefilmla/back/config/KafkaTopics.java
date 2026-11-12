@@ -16,6 +16,13 @@ public class KafkaTopics {
 	/** Transitions d'accès à la recherche IA (demande, grant, reject, revoke). */
 	public static final String AI_ACCESS_EVENTS = "ai-access.events";
 
+	/** Suffixe des Dead Letter Topics (convention Spring Kafka). */
+	public static final String DLT_SUFFIX = ".DLT";
+
+	public static String deadLetterTopic(String topic) {
+		return topic + DLT_SUFFIX;
+	}
+
 	private final int partitions;
 
 	private final int replicationFactor;
@@ -29,5 +36,11 @@ public class KafkaTopics {
 	@Bean
 	NewTopic aiAccessEventsTopic() {
 		return TopicBuilder.name(AI_ACCESS_EVENTS).partitions(partitions).replicas(replicationFactor).build();
+	}
+
+	/** Messages que le consommateur n'a pas pu traiter ; une partition suffit, ils sont rares et inspectés à la main. */
+	@Bean
+	NewTopic aiAccessEventsDeadLetterTopic() {
+		return TopicBuilder.name(deadLetterTopic(AI_ACCESS_EVENTS)).partitions(1).replicas(replicationFactor).build();
 	}
 }
