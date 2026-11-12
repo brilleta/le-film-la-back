@@ -10,16 +10,18 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - Caffeine (cache), Bucket4j (rate limiting), Actuator (`/actuator/health` uniquement)
 - PostgreSQL, Spring Data JPA, Flyway (`ddl-auto=validate` : le schéma ne change que par migration `db/migration/V*__*.sql`)
 - Spring Security 7 : BCrypt, JWT HS256 (`spring-security-oauth2-jose`) dans un cookie httpOnly, CSRF en mode SPA
-- Tests : Testcontainers PostgreSQL (`PostgresTestConfiguration` à importer dans tout `@SpringBootTest`) ; Docker requis pour `./mvnw verify`
+- Kafka (`spring-boot-starter-kafka`) : KRaft local via docker compose (`localhost:9094` depuis l'hôte, `kafka:9092` dans le réseau compose), Kafka UI sur `http://localhost:8090` ; topics déclarés dans `config/KafkaTopics` et créés au démarrage ; un broker absent n'empêche pas le démarrage (`fail-fast=false`)
+- Tests : Testcontainers PostgreSQL + Kafka (`TestcontainersConfiguration` à importer dans tout `@SpringBootTest`) ; Docker requis pour `./mvnw verify`
 
 ## Commandes
 - `./mvnw spring-boot:run` / `./mvnw test` / `./mvnw verify`
-- `docker compose up --build` pour lancer en local
+- `docker compose up --build` pour lancer en local (`docker compose up -d postgres kafka kafka-ui` pour ne lancer que l'infra et le back via `spring-boot:run`)
 
 ## Variables d'environnement
 - `ANTHROPIC_API_KEY`, `TMDB_TOKEN`, `ANTHROPIC_MODEL` (optionnel)
 - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
 - `JWT_SECRET` (base64, 32 octets min., sinon refus de démarrer), `JWT_TTL` (optionnel, défaut `PT24H`), `AUTH_COOKIE_SECURE` (optionnel, défaut `true` ; `false` seulement en dev HTTP)
+- `KAFKA_BOOTSTRAP_SERVERS` (défaut `localhost:9094`), `KAFKA_TOPIC_PARTITIONS` (défaut 3), `KAFKA_TOPIC_REPLICATION_FACTOR` (défaut 1 ; 3 sur Aiven)
 - `ADMIN_EMAIL` (optionnel) : au démarrage, ce compte passe ADMIN + accès IA, **seulement si aucun ADMIN n'existe encore** (pas de promotion à l'inscription : les emails ne sont pas vérifiés)
 - Les tests importent aussi `.env` : toute valeur qui influe sur un test doit être fixée dans `src/test/resources/config/application.properties`
 - Jamais en dur, jamais dans les logs
@@ -33,7 +35,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `entity/`, `repository/` : entités JPA et repositories Spring Data
 - `security/` : filtre JWT cookie, filtre CSRF, cookies d'auth, réponses 401/403
 - `dto/` : records Java
-- `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT
+- `config/` : cache, rate limiting, Spring AI, sécurité (`SecurityConfig`), JWT, topics Kafka (`KafkaTopics`)
 - `exception/` : @ControllerAdvice et exceptions métier
 
 ## Contrat d'API (ne pas le casser : le front en dépend)

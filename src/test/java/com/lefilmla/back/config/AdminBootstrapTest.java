@@ -2,7 +2,7 @@ package com.lefilmla.back.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.lefilmla.back.PostgresTestConfiguration;
+import com.lefilmla.back.TestcontainersConfiguration;
 import com.lefilmla.back.entity.AiAccess;
 import com.lefilmla.back.entity.Role;
 import com.lefilmla.back.entity.User;
@@ -19,7 +19,7 @@ import org.springframework.context.annotation.Import;
 
 // Contexte (et base) dédiés : ces tests vident la table users.
 @SpringBootTest(properties = "admin.email=Boss@Example.com")
-@Import(PostgresTestConfiguration.class)
+@Import(TestcontainersConfiguration.class)
 @ExtendWith(OutputCaptureExtension.class)
 class AdminBootstrapTest {
 

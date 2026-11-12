@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.lefilmla.back.PostgresTestConfiguration;
+import com.lefilmla.back.TestcontainersConfiguration;
 import com.lefilmla.back.client.ClaudeClient;
 import com.lefilmla.back.client.TmdbClient;
 import com.lefilmla.back.dto.AiCandidate;
@@ -35,7 +35,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
-@Import(PostgresTestConfiguration.class)
+@Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class AiSearchControllerTest {
 

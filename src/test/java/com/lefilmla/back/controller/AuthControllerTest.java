@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.lefilmla.back.PostgresTestConfiguration;
+import com.lefilmla.back.TestcontainersConfiguration;
 import com.lefilmla.back.client.TmdbClient;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -28,7 +28,7 @@ import tools.jackson.databind.json.JsonMapper;
 // Limite de débit relevée : ces tests enchaînent bien plus de logins/inscriptions que 10 par minute.
 @SpringBootTest(properties = "rate-limit.auth.capacity=1000")
 @AutoConfigureMockMvc
-@Import(PostgresTestConfiguration.class)
+@Import(TestcontainersConfiguration.class)
 class AuthControllerTest {
 
 	private static final String AUTH_COOKIE = "auth_token";
