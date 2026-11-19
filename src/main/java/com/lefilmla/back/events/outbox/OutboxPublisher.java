@@ -1,5 +1,8 @@
 package com.lefilmla.back.events.outbox;
 
+import com.lefilmla.back.observability.TraceParents;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -28,6 +31,9 @@ public class OutboxPublisher {
 
 	public static final String HEADER_EVENT_TYPE = "event-type";
 
+	/** Nom du span qui relie la requête d'origine à l'envoi Kafka, publié plus tard par le relais. */
+	public static final String PUBLISH_SPAN = "outbox publish";
+
 	private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
 
 	private final OutboxEventRepository repository;
@@ -40,9 +46,19 @@ public class OutboxPublisher {
 
 	private final Duration sendTimeout;
 
+	private final TraceParents traceParents;
+
+	private final Counter published;
+
+	private final Counter failed;
+
 	public OutboxPublisher(OutboxEventRepository repository, KafkaTemplate<String, String> kafkaTemplate, Clock clock,
 			@Value("${outbox.batch-size:100}") int batchSize,
-			@Value("${outbox.send-timeout:10s}") Duration sendTimeout) {
+			@Value("${outbox.send-timeout:10s}") Duration sendTimeout, TraceParents traceParents,
+			MeterRegistry meters) {
+		this.traceParents = traceParents;
+		this.published = outcomeCounter(meters, "success");
+		this.failed = outcomeCounter(meters, "failure");
 		this.repository = repository;
 		this.kafkaTemplate = kafkaTemplate;
 		this.clock = clock;
@@ -56,7 +72,8 @@ public class OutboxPublisher {
 		List<OutboxEvent> pending = repository.lockNextPending(batchSize);
 		int published = 0;
 		for (OutboxEvent event : pending) {
-			if (!send(event)) {
+			// Reprend la trace de la requête qui a écrit l'événement : l'envoi Kafka en devient un descendant
+			if (!traceParents.inSpan(PUBLISH_SPAN, event.getTraceparent(), () -> send(event))) {
 				break;
 			}
 			published++;
@@ -68,6 +85,13 @@ public class OutboxPublisher {
 		return batchSize;
 	}
 
+	private static Counter outcomeCounter(MeterRegistry meters, String outcome) {
+		return Counter.builder("outbox.events.sent")
+			.description("Tentatives d'envoi vers Kafka des événements de l'outbox")
+			.tag("outcome", outcome)
+			.register(meters);
+	}
+
 	private boolean send(OutboxEvent event) {
 		var record = new ProducerRecord<>(event.getTopic(), event.getMessageKey(), event.getPayload());
 		record.headers()
@@ -76,16 +100,19 @@ public class OutboxPublisher {
 		try {
 			kafkaTemplate.send(record).get(sendTimeout.toMillis(), TimeUnit.MILLISECONDS);
 			event.markPublished(clock.instant());
+			published.increment();
 			return true;
 		}
 		catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();
 			event.markFailed("interrompu");
+			failed.increment();
 			return false;
 		}
 		catch (ExecutionException | TimeoutException ex) {
 			Throwable cause = ex instanceof ExecutionException && ex.getCause() != null ? ex.getCause() : ex;
 			event.markFailed(cause.getClass().getSimpleName() + ": " + cause.getMessage());
+			failed.increment();
 			log.warn("Publication Kafka échouée (événement {}, tentative {}) : {}", event.getEventId(),
 					event.getAttempts(), cause.getMessage());
 			return false;

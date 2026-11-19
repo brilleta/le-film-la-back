@@ -51,3 +51,16 @@ services:
       # = nombre de brokers du plan Aiven (1 sur le plan free)
       - key: KAFKA_TOPIC_REPLICATION_FACTOR
         sync: false
+      # Observabilité, Grafana Cloud (stack → « OpenTelemetry » → Configure). <gateway> = URL OTLP affichée,
+      # par ex. https://otlp-gateway-prod-eu-west-2.grafana.net/otlp. Sans ces variables, rien n'est exporté.
+      - key: MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT
+        sync: false # <gateway>/v1/traces
+      - key: MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT
+        sync: false # <gateway>/v1/logs
+      - key: MANAGEMENT_OTLP_METRICS_EXPORT_URL
+        sync: false # <gateway>/v1/metrics
+      - key: MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED
+        sync: false # true
+      # « Basic » + espace + base64("<instance ID>:<token>"), le token ayant les droits d'écriture metrics/logs/traces
+      - key: OTLP_AUTHORIZATION
+        sync: false

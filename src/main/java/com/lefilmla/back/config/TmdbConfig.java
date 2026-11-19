@@ -12,12 +12,16 @@ import org.springframework.web.client.RestClient;
 @EnableConfigurationProperties(TmdbProperties.class)
 public class TmdbConfig {
 
+	/**
+	 * Part du {@link RestClient.Builder} de Spring Boot (et non de {@code RestClient.builder()}) : il porte
+	 * l'ObservationRegistry, donc chaque appel TMDB devient un span enfant de la requête HTTP en cours.
+	 */
 	@Bean
-	RestClient tmdbRestClient(TmdbProperties properties) {
+	RestClient tmdbRestClient(RestClient.Builder builder, TmdbProperties properties) {
 		HttpClient httpClient = HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build();
 		JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
 		requestFactory.setReadTimeout(properties.readTimeout());
-		return RestClient.builder()
+		return builder
 			.baseUrl(properties.baseUrl())
 			.requestFactory(requestFactory)
 			.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.token())

@@ -1,5 +1,6 @@
 package com.lefilmla.back.events.outbox;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,4 +21,8 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
 	Optional<OutboxEvent> findByEventId(UUID eventId);
 
 	long countByPublishedAtIsNull();
+
+	/** Date d'écriture du plus ancien événement pas encore publié, {@code null} si l'outbox est à jour. */
+	@Query("select min(e.createdAt) from OutboxEvent e where e.publishedAt is null")
+	Instant oldestPendingCreatedAt();
 }

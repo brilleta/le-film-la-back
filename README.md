@@ -17,6 +17,7 @@ API Spring Boot de l'application de recherche de films et de séries. Le front R
 - Spring AI (Anthropic), Spring Security, Spring Data JPA, Flyway, Spring Kafka
 - PostgreSQL, Apache Kafka (KRaft)
 - Caffeine (cache), Bucket4j (rate limiting), Actuator (`/actuator/health`)
+- Observabilité : OpenTelemetry (via Micrometer), Grafana LGTM en local
 - Tests : JUnit 5, Testcontainers (PostgreSQL et Kafka)
 
 ## Démarrer en local
@@ -27,7 +28,7 @@ Prérequis : Docker, Java 21 (ou juste Docker pour tout lancer en conteneurs).
 2. Lancer l'infrastructure :
 
    ```sh
-   docker compose up -d postgres kafka kafka-ui
+   docker compose up -d postgres kafka kafka-ui lgtm
    ```
 
 3. Lancer le back :
@@ -36,7 +37,7 @@ Prérequis : Docker, Java 21 (ou juste Docker pour tout lancer en conteneurs).
    ./mvnw spring-boot:run
    ```
 
-L'API répond sur `http://localhost:8080`, Kafka UI sur `http://localhost:8090`.
+L'API répond sur `http://localhost:8080`, Kafka UI sur `http://localhost:8090`, Grafana sur `http://localhost:3000`.
 
 Pour tout lancer en conteneurs, back compris : `docker compose up --build`.
 
@@ -55,6 +56,48 @@ Pour tout lancer en conteneurs, back compris : `docker compose up --build`.
 Les événements passent par un **outbox transactionnel** : écrits dans la table `outbox_events` dans la même transaction que la donnée métier, puis relayés vers Kafka juste après le commit et par un balayage périodique. Un broker indisponible ne fait perdre aucun événement, il retarde seulement leur publication. Livraison au moins une fois : les consommateurs dédoublonnent sur l'`event-id` porté en header.
 
 Côté consommation, le back lui-même écoute `ai-access.events` et construit l'**historique des accès IA** (`ai_access_history`), exposé aux admins. L'insertion est idempotente (`INSERT … ON CONFLICT DO NOTHING` sur l'identifiant d'événement), les erreurs transitoires sont réessayées, et un message illisible part en Dead Letter Topic sans bloquer la partition.
+
+## Observabilité
+
+Chaque requête produit une **trace OpenTelemetry** : le span de la requête HTTP, avec en enfants les appels à TMDB et à Claude (durée, statut, erreur). Le `traceId` est ajouté à chaque ligne de log, ce qui permet de retrouver la trace complète à partir d'une erreur dans les logs.
+
+- Instrumentation par Micrometer Observation (`spring-boot-starter-opentelemetry`), sans agent Java
+- Export OTLP/HTTP, activé seulement si `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` est défini : sans collecteur, rien n'est envoyé
+- En local, le conteneur `lgtm` (Grafana, Tempo, Loki, Prometheus) reçoit traces, logs et métriques : Grafana → *Explore* → *Tempo*
+- La trace traverse Kafka : le producteur ajoute le header W3C `traceparent`, le consommateur le reprend. Une demande d'accès IA se lit donc d'un bout à l'autre : requête HTTP → `outbox publish` → envoi Kafka → listener qui écrit l'historique
+- L'outbox publie plus tard, depuis un autre thread : le `traceparent` de la requête est enregistré avec l'événement (colonne `traceparent`) et restauré au moment de l'envoi. Le trou entre la fin de la requête et la publication se voit dans la trace
+- Kafka Streams (stats des recherches) n'est pas instrumenté : il garde les headers mais ne produit pas de span
+- Non tracés : les sondes `/actuator`, le flux SSE des stats, les tâches planifiées et les étapes internes de Spring Security
+- Le contenu des prompts envoyés à Claude n'est jamais enregistré dans les traces
+
+**Logs** : chaque log part aussi en OTLP vers Loki (appender OpenTelemetry déclaré dans `logback-spring.xml`), avec son `trace_id` en attribut : depuis un log d'erreur dans Grafana, un clic ouvre la trace. Activé seulement si `MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT` est défini.
+
+**Métriques** (OTLP, poussées vers Prometheus ; coupées sauf si `MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true` et `MANAGEMENT_OTLP_METRICS_EXPORT_URL` sont définis) :
+
+| Métrique | Ce qu'elle dit |
+| --- | --- |
+| `outbox.events.pending`, `outbox.events.oldest.pending.age` | Événements pas encore publiés et âge du plus ancien : Kafka ne reçoit plus rien si ça monte |
+| `outbox.events.sent{outcome}` | Envois de l'outbox, succès et échecs |
+| `search.events.dropped{reason}` | Mesures de recherche perdues (file pleine, envoi en échec) |
+| `kafka.consumer.fetch.manager.records.lag` | Retard des consommateurs, par topic et partition (fourni par Spring Kafka) |
+| `gen_ai.client.token.usage{gen_ai.token.type}` | Tokens Claude consommés, entrée et sortie (fourni par Spring AI) |
+| `http.server.requests`, `http.client.requests` | Débit, erreurs et latence de l'API et de TMDB, en histogrammes exponentiels (une série par histogramme) |
+
+**Dashboard** : `observability/grafana/dashboards/le-film-la-back.json`, versionné et chargé automatiquement par le conteneur `lgtm` (Grafana → *Dashboards* → dossier *le-film-la*). Il regroupe l'outbox et le lag Kafka, l'API, le coût et la latence de Claude, et les logs d'avertissement et d'erreur.
+
+**`X-Trace-Id`** : chaque réponse de l'API (erreurs comprises) porte l'identifiant de sa trace, ce qui permet de retrouver une requête précise dans Tempo à partir d'une capture d'écran ou d'un signalement.
+
+**En prod**, les trois signaux partent vers Grafana Cloud (offre gratuite) : variables `MANAGEMENT_*` et `OTLP_AUTHORIZATION` dans Render (voir `render.yaml`), le header d'authentification est ajouté par `application-prod.properties`. Le dashboard s'importe tel quel dans Grafana Cloud (*Dashboards* → *New* → *Import*) : les sources de métriques et de logs se choisissent dans les listes en haut. Le back envoie environ 1 200 séries de métriques, pour une limite de 10 000 sur l'offre gratuite.
+
+`docker compose up --build` active traces, logs et métriques. Pour lancer le back hors de compose :
+
+```sh
+docker compose up -d postgres kafka kafka-ui lgtm
+MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
+MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/logs \
+MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true MANAGEMENT_OTLP_METRICS_EXPORT_URL=http://localhost:4318/v1/metrics \
+./mvnw spring-boot:run
+```
 
 ## Tests
 

@@ -8,6 +8,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - Java 21, Spring Boot, Maven (wrapper)
 - Spring AI (starter Anthropic), modèle Claude Haiku configurable
 - Caffeine (cache), Bucket4j (rate limiting), Actuator (`/actuator/health` uniquement)
+- Observabilité : `spring-boot-starter-opentelemetry` (Micrometer Observation + pont OTel). Spans : requêtes HTTP entrantes, appels TMDB (`RestClient.Builder` de Boot, module `spring-boot-starter-restclient`), appels Claude (observations Spring AI, sans le contenu des prompts). `ObservabilityConfig` écarte `/actuator/**`, le flux SSE des stats, les `@Scheduled` et les observations de Spring Security. Export OTLP **seulement si** `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` est défini (compose : conteneur `lgtm`, Grafana sur `http://localhost:3000`) ; échantillonnage `TRACING_SAMPLING_PROBABILITY` (défaut 1.0). traceId/spanId dans chaque ligne de log. Traces à travers Kafka : `spring.kafka.template/listener.observation-enabled` (header `traceparent`) ; l'outbox stocke le `traceparent` de la requête (colonne `outbox_events.traceparent`, V5) et `OutboxPublisher` le restaure dans un span `outbox publish` (`observability/TraceParents`) ; `SearchEventPublisher` capture le contexte (`ContextSnapshotFactory`) avant de passer la main à son thread ; Kafka Streams n'est pas tracé. Logs : appender `OpenTelemetryAppender` (`logback-spring.xml`, installé par `ObservabilityConfig`), export OTLP vers Loki seulement si `MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT` est défini. Métriques OTLP coupées par défaut (`MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true` + `MANAGEMENT_OTLP_METRICS_EXPORT_URL` pour les activer), histogrammes exponentiels ; métriques maison : `outbox.events.pending`, `outbox.events.oldest.pending.age` (`ObservabilityConfig`), `outbox.events.sent{outcome}` (`OutboxPublisher`), `search.events.dropped{reason}` (`SearchEventPublisher`) ; lag et tokens Claude fournis par Spring Kafka et Spring AI. `observability/TraceIdResponseFilter` (après le filtre d'observation HTTP, avant Spring Security) pose le header `X-Trace-Id` sur les réponses dont la trace est échantillonnée. Prod : Grafana Cloud, header `Authorization` des trois exports = `OTLP_AUTHORIZATION` (`application-prod.properties`). Dashboard versionné `observability/grafana/dashboards/le-film-la-back.json` (sources en variables `${prometheus}`/`${loki}`, importable dans Grafana Cloud), monté dans `lgtm` par compose (en PromQL, histogrammes natifs : `histogram_quantile(0.95, rate(x_milliseconds[…]))`, `histogram_count(...)`). Tests : `@AutoConfigureTracing` + `support/InMemorySpans` (voir `TracingIntegrationTest`, `KafkaTracingIntegrationTest`)
 - PostgreSQL, Spring Data JPA, Flyway (`ddl-auto=validate` : le schéma ne change que par migration `db/migration/V*__*.sql`)
 - Spring Security 7 : BCrypt, JWT HS256 (`spring-security-oauth2-jose`) dans un cookie httpOnly, CSRF en mode SPA
 - Kafka (`spring-boot-starter-kafka`) : KRaft local via docker compose (`localhost:9094` depuis l'hôte, `kafka:9092` dans le réseau compose), Kafka UI sur `http://localhost:8090` ; topics déclarés dans `config/KafkaTopics` et créés au démarrage ; un broker absent n'empêche pas le démarrage (`fail-fast=false`)
@@ -15,7 +16,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 
 ## Commandes
 - `./mvnw spring-boot:run` / `./mvnw test` / `./mvnw verify`
-- `docker compose up --build` pour lancer en local (`docker compose up -d postgres kafka kafka-ui` pour ne lancer que l'infra et le back via `spring-boot:run`)
+- `docker compose up --build` pour lancer en local (`docker compose up -d postgres kafka kafka-ui lgtm` pour ne lancer que l'infra et le back via `spring-boot:run` ; ajouter alors `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces` dans l'environnement pour voir les traces)
 
 ## Variables d'environnement
 - `ANTHROPIC_API_KEY`, `TMDB_TOKEN`, `ANTHROPIC_MODEL` (optionnel)
@@ -23,6 +24,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `JWT_SECRET` (base64, 32 octets min., sinon refus de démarrer), `JWT_TTL` (optionnel, défaut `PT24H`), `AUTH_COOKIE_SECURE` (optionnel, défaut `true` ; `false` seulement en dev HTTP)
 - `KAFKA_BOOTSTRAP_SERVERS` (défaut `localhost:9094`), `KAFKA_TOPIC_PARTITIONS` (défaut 3), `KAFKA_TOPIC_REPLICATION_FACTOR` (défaut 1 ; = nombre de brokers Aiven)
 - Profil `prod` seulement : `SPRING_PROFILES_ACTIVE=prod`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `KAFKA_CA_CERT` (PEM inline)
+- `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` (optionnel, URL OTLP/HTTP des traces, `…/v1/traces`), `MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT` (`…/v1/logs`), `MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED` + `MANAGEMENT_OTLP_METRICS_EXPORT_URL` (`…/v1/metrics`), `OTLP_AUTHORIZATION` (prod : `Basic <base64(instanceId:token)>` de Grafana Cloud), `TRACING_SAMPLING_PROBABILITY` (optionnel, défaut 1.0) ; à passer en vraies variables d'environnement, pas dans `.env`
 - `ADMIN_EMAIL` (optionnel) : au démarrage, ce compte passe ADMIN + accès IA, **seulement si aucun ADMIN n'existe encore** (pas de promotion à l'inscription : les emails ne sont pas vérifiés)
 - Les tests importent aussi `.env` : toute valeur qui influe sur un test doit être fixée dans `src/test/resources/config/application.properties`
 - Jamais en dur, jamais dans les logs
@@ -49,6 +51,7 @@ Déploiement : Render (web service Docker, plan free, région Frankfurt) + Postg
 - `POST /api/ai/search` `{ "description" }` → `{ "results": [{ "tmdbId", "type", "title", "year", "posterPath", "voteAverage", "reason" }] }`
   - connecté (401 `UNAUTHENTICATED`) avec accès IA `GRANTED` (403 `AI_ACCESS_REQUIRED`), header CSRF obligatoire
 - Erreurs : `{ "error", "message" }`
+- Toute réponse peut porter le header `X-Trace-Id` (32 caractères hexa) : identifiant de la trace, à afficher avec une erreur pour la retrouver dans Grafana
 - Toute modification du contrat doit m'être signalée explicitement
 
 ### Auth

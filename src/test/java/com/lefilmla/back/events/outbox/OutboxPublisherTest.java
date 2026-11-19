@@ -7,6 +7,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lefilmla.back.observability.TraceParents;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -31,8 +33,10 @@ class OutboxPublisherTest {
 	@SuppressWarnings("unchecked")
 	private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
 
+	private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+
 	private final OutboxPublisher publisher = new OutboxPublisher(repository, kafkaTemplate,
-			Clock.fixed(NOW, ZoneOffset.UTC), 10, Duration.ofSeconds(1));
+			Clock.fixed(NOW, ZoneOffset.UTC), 10, Duration.ofSeconds(1), TraceParents.noop(), meters);
 
 	@Test
 	void publishesPendingEventsInOrderWithKeyAndHeaders() {
@@ -57,6 +61,7 @@ class OutboxPublisherTest {
 		assertThat(first.getPublishedAt()).isEqualTo(NOW);
 		assertThat(first.getAttempts()).isEqualTo(1);
 		assertThat(second.getPublishedAt()).isEqualTo(NOW);
+		assertThat(meters.counter("outbox.events.sent", "outcome", "success").count()).isEqualTo(2);
 	}
 
 	@Test
@@ -73,6 +78,8 @@ class OutboxPublisherTest {
 		assertThat(first.getAttempts()).isEqualTo(1);
 		assertThat(first.getLastError()).contains("TimeoutException").contains("broker injoignable");
 		assertThat(second.getAttempts()).isZero();
+		assertThat(meters.counter("outbox.events.sent", "outcome", "failure").count()).isEqualTo(1);
+		assertThat(meters.counter("outbox.events.sent", "outcome", "success").count()).isZero();
 		verify(kafkaTemplate, never()).send(argThatKey(second.getMessageKey()));
 	}
 
