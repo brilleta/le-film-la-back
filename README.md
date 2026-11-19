@@ -85,6 +85,10 @@ Chaque requête produit une **trace OpenTelemetry** : le span de la requête HTT
 
 **Dashboard** : `observability/grafana/dashboards/le-film-la-back.json`, versionné et chargé automatiquement par le conteneur `lgtm` (Grafana → *Dashboards* → dossier *le-film-la*). Il regroupe l'outbox et le lag Kafka, l'API, le coût et la latence de Claude, et les logs d'avertissement et d'erreur.
 
+**`X-Trace-Id`** : chaque réponse de l'API (erreurs comprises) porte l'identifiant de sa trace, ce qui permet de retrouver une requête précise dans Tempo à partir d'une capture d'écran ou d'un signalement.
+
+**En prod**, les trois signaux partent vers Grafana Cloud (offre gratuite) : variables `MANAGEMENT_*` et `OTLP_AUTHORIZATION` dans Render (voir `render.yaml`), le header d'authentification est ajouté par `application-prod.properties`. Le dashboard s'importe tel quel dans Grafana Cloud (*Dashboards* → *New* → *Import*) : les sources de métriques et de logs se choisissent dans les listes en haut. Le back envoie environ 1 200 séries de métriques, pour une limite de 10 000 sur l'offre gratuite.
+
 `docker compose up --build` active traces, logs et métriques. Pour lancer le back hors de compose :
 
 ```sh

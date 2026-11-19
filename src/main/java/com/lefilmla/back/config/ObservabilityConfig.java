@@ -1,6 +1,7 @@
 package com.lefilmla.back.config;
 
 import com.lefilmla.back.events.outbox.OutboxEventRepository;
+import com.lefilmla.back.observability.TraceIdResponseFilter;
 import com.lefilmla.back.observability.TraceParents;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.binder.MeterBinder;
@@ -14,6 +15,8 @@ import io.micrometer.observation.ObservationPredicate;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.core.Ordered;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
@@ -41,6 +44,15 @@ public class ObservabilityConfig {
 			}
 			return !name.equals("tasks.scheduled.execution") && !name.startsWith("spring.security.");
 		};
+	}
+
+	/** Juste après le filtre d'observation HTTP de Boot (ordre {@code HIGHEST_PRECEDENCE + 1}) ; sans traçage, inerte. */
+	@Bean
+	FilterRegistrationBean<TraceIdResponseFilter> traceIdResponseFilter(ObjectProvider<Tracer> tracer) {
+		var registration = new FilterRegistrationBean<>(
+				new TraceIdResponseFilter(tracer.getIfAvailable(() -> Tracer.NOOP)));
+		registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
+		return registration;
 	}
 
 	/**

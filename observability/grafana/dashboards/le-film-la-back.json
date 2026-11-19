@@ -31,7 +31,7 @@
       "description": "Événements écrits en base mais pas encore publiés sur Kafka. Doit revenir à 0 en quelques secondes.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 5,
@@ -75,7 +75,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "sum(outbox_events_pending)"
@@ -88,7 +88,7 @@
       "description": "Au-delà de quelques secondes : Kafka ne reçoit plus les événements.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 5,
@@ -132,7 +132,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "max(outbox_events_oldest_pending_age_seconds)"
@@ -145,7 +145,7 @@
       "description": "Messages en retard du consommateur le plus lent (historique IA, Kafka Streams).",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 5,
@@ -189,7 +189,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "max(kafka_consumer_fetch_manager_records_lag_max)"
@@ -202,7 +202,7 @@
       "description": "Événements de recherche abandonnés (file pleine, envoi en échec) : fire and forget, la recherche n'attend jamais Kafka.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 5,
@@ -246,7 +246,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "sum(increase(search_events_dropped_total[1h]))"
@@ -259,7 +259,7 @@
       "description": "Tentatives par minute, succès et échecs.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -293,7 +293,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "sum by (outcome) (rate(outbox_events_sent_total[$__rate_interval])) * 60",
@@ -307,7 +307,7 @@
       "description": "",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -341,7 +341,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "max by (topic) (kafka_consumer_fetch_manager_records_lag)",
@@ -367,7 +367,7 @@
       "description": "",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -401,7 +401,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "sum by (uri) (histogram_count(rate(http_server_requests_milliseconds[$__rate_interval]))) * 60",
@@ -415,7 +415,7 @@
       "description": "",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -449,7 +449,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (uri) (rate(http_server_requests_milliseconds[$__rate_interval])))",
@@ -463,7 +463,7 @@
       "description": "",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -497,7 +497,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "sum by (uri) (histogram_count(rate(http_server_requests_milliseconds{status=~\"5..\"}[$__rate_interval]))) * 60",
@@ -511,7 +511,7 @@
       "description": "",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -545,7 +545,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (client_name) (rate(http_client_requests_milliseconds[$__rate_interval])))",
@@ -571,7 +571,7 @@
       "description": "Coût de la recherche IA : tokens d'entrée et de sortie sur l'heure glissante.",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -605,7 +605,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "sum by (gen_ai_token_type) (increase(gen_ai_client_token_usage_total{gen_ai_token_type=~\"input|output\"}[1h]))",
@@ -619,7 +619,7 @@
       "description": "",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${prometheus}"
       },
       "gridPos": {
         "h": 8,
@@ -653,7 +653,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${prometheus}"
           },
           "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (gen_ai_request_model) (rate(gen_ai_client_operation_milliseconds[$__rate_interval])))",
@@ -678,7 +678,7 @@
       "title": "Avertissements et erreurs",
       "datasource": {
         "type": "loki",
-        "uid": "loki"
+        "uid": "${loki}"
       },
       "gridPos": {
         "h": 10,
@@ -696,7 +696,7 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "loki"
+            "uid": "${loki}"
           },
           "refId": "A",
           "expr": "{service_name=\"le-film-la-back\"} | severity_text=~\"WARN|ERROR\""
@@ -705,5 +705,27 @@
     }
   ],
   "editable": true,
-  "description": "Santé du back : outbox et consommateurs Kafka, API, coût et latence de Claude, logs. Cliquer sur un trace_id dans les logs ouvre la trace dans Tempo."
+  "description": "Santé du back : outbox et consommateurs Kafka, API, coût et latence de Claude, logs. Cliquer sur un trace_id dans les logs ouvre la trace dans Tempo.",
+  "templating": {
+    "list": [
+      {
+        "name": "prometheus",
+        "label": "Métriques",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "loki",
+        "label": "Logs",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      }
+    ]
+  }
 }

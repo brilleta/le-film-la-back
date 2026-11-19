@@ -3,6 +3,8 @@ package com.lefilmla.back.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
+import com.lefilmla.back.observability.TraceIdResponseFilter;
+
 import com.lefilmla.back.TestcontainersConfiguration;
 import com.lefilmla.back.support.InMemorySpans;
 import io.opentelemetry.api.trace.SpanKind;
@@ -54,6 +56,19 @@ class TracingIntegrationTest {
 		assertThat(tmdb.getParentSpanId()).isEqualTo(server.getSpanId());
 		// L'échec de TMDB se lit dans la trace
 		assertThat(tmdb.getStatus().getStatusCode()).hasToString("ERROR");
+	}
+
+	@Test
+	void responsesCarryTheTraceIdEvenOnErrors() throws Exception {
+		String trending = mockMvc.perform(get("/api/trending")).andReturn().getResponse()
+			.getHeader(TraceIdResponseFilter.HEADER);
+		SpanData server = awaitSpan(SpanKind.SERVER);
+		assertThat(trending).isEqualTo(server.getTraceId());
+
+		// 401 renvoyé par Spring Security : le header est posé avant
+		String unauthorized = mockMvc.perform(get("/api/auth/me")).andReturn().getResponse()
+			.getHeader(TraceIdResponseFilter.HEADER);
+		assertThat(unauthorized).hasSize(32).isNotEqualTo(trending);
 	}
 
 	@Test
