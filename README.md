@@ -63,16 +63,36 @@ Chaque requête produit une **trace OpenTelemetry** : le span de la requête HTT
 
 - Instrumentation par Micrometer Observation (`spring-boot-starter-opentelemetry`), sans agent Java
 - Export OTLP/HTTP, activé seulement si `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` est défini : sans collecteur, rien n'est envoyé
-- En local, le conteneur `lgtm` (Grafana, Tempo, Loki, Prometheus) reçoit les traces : Grafana → *Explore* → *Tempo*
+- En local, le conteneur `lgtm` (Grafana, Tempo, Loki, Prometheus) reçoit traces, logs et métriques : Grafana → *Explore* → *Tempo*
 - La trace traverse Kafka : le producteur ajoute le header W3C `traceparent`, le consommateur le reprend. Une demande d'accès IA se lit donc d'un bout à l'autre : requête HTTP → `outbox publish` → envoi Kafka → listener qui écrit l'historique
 - L'outbox publie plus tard, depuis un autre thread : le `traceparent` de la requête est enregistré avec l'événement (colonne `traceparent`) et restauré au moment de l'envoi. Le trou entre la fin de la requête et la publication se voit dans la trace
 - Kafka Streams (stats des recherches) n'est pas instrumenté : il garde les headers mais ne produit pas de span
 - Non tracés : les sondes `/actuator`, le flux SSE des stats, les tâches planifiées et les étapes internes de Spring Security
 - Le contenu des prompts envoyés à Claude n'est jamais enregistré dans les traces
 
+**Logs** : chaque log part aussi en OTLP vers Loki (appender OpenTelemetry déclaré dans `logback-spring.xml`), avec son `trace_id` en attribut : depuis un log d'erreur dans Grafana, un clic ouvre la trace. Activé seulement si `MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT` est défini.
+
+**Métriques** (OTLP, poussées vers Prometheus ; coupées sauf si `MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true` et `MANAGEMENT_OTLP_METRICS_EXPORT_URL` sont définis) :
+
+| Métrique | Ce qu'elle dit |
+| --- | --- |
+| `outbox.events.pending`, `outbox.events.oldest.pending.age` | Événements pas encore publiés et âge du plus ancien : Kafka ne reçoit plus rien si ça monte |
+| `outbox.events.sent{outcome}` | Envois de l'outbox, succès et échecs |
+| `search.events.dropped{reason}` | Mesures de recherche perdues (file pleine, envoi en échec) |
+| `kafka.consumer.fetch.manager.records.lag` | Retard des consommateurs, par topic et partition (fourni par Spring Kafka) |
+| `gen_ai.client.token.usage{gen_ai.token.type}` | Tokens Claude consommés, entrée et sortie (fourni par Spring AI) |
+| `http.server.requests`, `http.client.requests` | Débit, erreurs et latence de l'API et de TMDB, en histogrammes exponentiels (une série par histogramme) |
+
+**Dashboard** : `observability/grafana/dashboards/le-film-la-back.json`, versionné et chargé automatiquement par le conteneur `lgtm` (Grafana → *Dashboards* → dossier *le-film-la*). Il regroupe l'outbox et le lag Kafka, l'API, le coût et la latence de Claude, et les logs d'avertissement et d'erreur.
+
+`docker compose up --build` active traces, logs et métriques. Pour lancer le back hors de compose :
+
 ```sh
 docker compose up -d postgres kafka kafka-ui lgtm
-MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces ./mvnw spring-boot:run
+MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
+MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/logs \
+MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED=true MANAGEMENT_OTLP_METRICS_EXPORT_URL=http://localhost:4318/v1/metrics \
+./mvnw spring-boot:run
 ```
 
 ## Tests

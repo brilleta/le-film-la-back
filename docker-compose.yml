@@ -65,6 +65,10 @@ services:
       - "3000:3000"
       - "4317:4317"
       - "4318:4318"
+    volumes:
+      # Dashboard versionné, chargé au démarrage (dossier « le-film-la » dans Grafana)
+      - ./observability/grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/le-film-la.yaml:ro
+      - ./observability/grafana/dashboards:/otel-lgtm/le-film-la-dashboards:ro
 
   back:
     build: .
@@ -78,6 +82,11 @@ services:
       AUTH_COOKIE_SECURE: "false"
       # Traces envoyées en OTLP/HTTP au conteneur lgtm (sans cette variable, rien n'est exporté)
       MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
+      # Logs (Loki) et métriques (Prometheus), même collecteur ; métriques poussées toutes les 15 s pour la démo
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/logs
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "true"
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
+      MANAGEMENT_OTLP_METRICS_EXPORT_STEP: 15s
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,6 +1,15 @@
 package com.lefilmla.back.config;
 
+import com.lefilmla.back.events.outbox.OutboxEventRepository;
 import com.lefilmla.back.observability.TraceParents;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.binder.MeterBinder;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import org.springframework.beans.factory.InitializingBean;
 import io.micrometer.observation.ObservationPredicate;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
@@ -31,6 +40,33 @@ public class ObservabilityConfig {
 				return !path.startsWith("/actuator") && !path.equals(STATS_STREAM_PATH);
 			}
 			return !name.equals("tasks.scheduled.execution") && !name.startsWith("spring.security.");
+		};
+	}
+
+	/**
+	 * Branche l'appender Logback déclaré dans {@code logback-spring.xml} sur le SDK OpenTelemetry de Boot.
+	 * Les logs émis avant (démarrage) sont gardés en mémoire puis envoyés ; sans endpoint de logs, rien ne part.
+	 */
+	@Bean
+	InitializingBean installOpenTelemetryLogAppender(OpenTelemetry openTelemetry) {
+		return () -> OpenTelemetryAppender.install(openTelemetry);
+	}
+
+	/**
+	 * Santé de l'outbox : un stock qui monte ou un âge qui grandit signifie que Kafka ne reçoit plus les événements
+	 * (broker absent, erreur répétée). Lu à chaque export (une requête par minute, la base est déjà sollicitée par
+	 * le balayage de l'outbox toutes les 2 s).
+	 */
+	@Bean
+	MeterBinder outboxMetrics(OutboxEventRepository outbox, Clock clock) {
+		return registry -> {
+			Gauge.builder("outbox.events.pending", outbox, OutboxEventRepository::countByPublishedAtIsNull)
+				.description("Événements de l'outbox pas encore publiés sur Kafka")
+				.register(registry);
+			Gauge.builder("outbox.events.oldest.pending.age", outbox, repo -> {
+				Instant oldest = repo.oldestPendingCreatedAt();
+				return oldest == null ? 0 : Duration.between(oldest, clock.instant()).toMillis() / 1000.0;
+			}).description("Âge du plus ancien événement en attente").baseUnit("seconds").register(registry);
 		};
 	}
 

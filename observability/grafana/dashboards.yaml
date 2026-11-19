@@ -1,0 +1,9 @@
+# Provisioning Grafana : charge les dashboards versionnés du dossier monté par docker compose (conteneur lgtm)
+apiVersion: 1
+providers:
+  - name: "le-film-la"
+    folder: "le-film-la"
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /otel-lgtm/le-film-la-dashboards

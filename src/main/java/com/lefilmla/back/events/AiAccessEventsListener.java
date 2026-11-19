@@ -34,7 +34,7 @@ public class AiAccessEventsListener {
 	public void onEvent(ConsumerRecord<String, String> record) {
 		AiAccessEvent event = parse(record);
 		boolean recorded = historyService.record(event);
-		log.debug("Événement {} ({}) pour {} : {}", event.eventId(), event.type(), event.userId(),
+		log.info("Historique des accès IA : événement {} ({}) pour {} {}", event.eventId(), event.type(), event.userId(),
 				recorded ? "enregistré" : "doublon");
 	}
 
